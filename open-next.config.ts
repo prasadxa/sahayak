@@ -5,7 +5,7 @@ import { defineCloudflareConfig } from "@opennextjs/cloudflare/config";
 // See https://opennext.js.org/cloudflare/caching to add one later.
 const config = defineCloudflareConfig({});
 
-export default {
+const workersConfig = {
   ...config,
   // `npm run build` uses `next build --turbo`, whose server chunks are loaded
   // with dynamic require() that Workers can't resolve ("Failed to load chunk
@@ -13,3 +13,5 @@ export default {
   // `next dev --turbo` is unaffected.
   buildCommand: "CF_WORKERS_BUILD=1 npx next build",
 };
+
+export default workersConfig;
