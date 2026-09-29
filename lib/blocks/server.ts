@@ -16,7 +16,6 @@ type Document = {
   content: string;
   kind: BlockKind;
   documentId: string;
-  userId: Doc<"users">["_id"];
   chatId?: string;
 };
 
@@ -25,7 +24,6 @@ export interface SaveDocumentProps {
   title: string;
   kind: BlockKind;
   content: string;
-  userId: string;
   chatId?: string;
 }
 
@@ -35,6 +33,8 @@ export interface CreateDocumentCallbackProps {
   dataStream: DataStreamWriter;
   user: Doc<"users">["_id"];
   chatId?: string;
+  /** Convex Auth token of the signed-in user; every Convex call is made as them. */
+  token: string;
 }
 
 export interface UpdateDocumentCallbackProps {
@@ -43,6 +43,8 @@ export interface UpdateDocumentCallbackProps {
   dataStream: DataStreamWriter;
   user: Doc<"users">["_id"];
   chatId?: string;
+  /** Convex Auth token of the signed-in user; every Convex call is made as them. */
+  token: string;
 }
 
 export interface DocumentHandler<T = BlockKind> {
@@ -65,17 +67,21 @@ export function createDocumentHandler<T extends BlockKind>(config: {
         dataStream: args.dataStream,
         user: args.user,
         chatId: args.chatId,
+        token: args.token,
       });
 
       if (args.user) {
-        await fetchMutation(api.documents.saveDocument, {
-          documentId: args.id,
-          title: args.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.user,
-          chatId: args.chatId,
-        });
+        await fetchMutation(
+          api.documents.saveDocument,
+          {
+            documentId: args.id,
+            title: args.title,
+            content: draftContent,
+            kind: config.kind,
+            chatId: args.chatId,
+          },
+          { token: args.token },
+        );
       }
 
       return;
@@ -87,17 +93,21 @@ export function createDocumentHandler<T extends BlockKind>(config: {
         dataStream: args.dataStream,
         user: args.user,
         chatId: args.chatId,
+        token: args.token,
       });
 
       if (args.user) {
-        await fetchMutation(api.documents.saveDocument, {
-          documentId: args.document.documentId,
-          title: args.document.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.user,
-          chatId: args.chatId,
-        });
+        await fetchMutation(
+          api.documents.saveDocument,
+          {
+            documentId: args.document.documentId,
+            title: args.document.title,
+            content: draftContent,
+            kind: config.kind,
+            chatId: args.chatId,
+          },
+          { token: args.token },
+        );
       }
 
       return;

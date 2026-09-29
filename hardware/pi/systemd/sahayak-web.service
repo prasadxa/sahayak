@@ -1,0 +1,23 @@
+# Sahayak web app (Next.js production server) on the Pi.
+# setup.sh substitutes @USER@, @HOME@, @REPO_DIR@ and @NODE@ and installs this
+# to /etc/systemd/system/sahayak-web.service.
+[Unit]
+Description=Sahayak Next.js server (kiosk)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO_DIR@
+EnvironmentFile=@HOME@/sahayak.env
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=@NODE@ @REPO_DIR@/node_modules/next/dist/bin/next start -p 3000
+Restart=always
+RestartSec=3
+# Keep the Pi responsive if the build ever balloons.
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

@@ -40,3 +40,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# convex local backend data
+.convex/
+
+# superpowers plan workspaces
+.superpowers/
+
+# cloudflare workers (OpenNext)
+.open-next/
+.wrangler/
+.dev.vars

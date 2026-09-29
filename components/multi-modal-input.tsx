@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SuggestedActions } from "@/components/suggested-actions";
 import { Toggle } from "@/components/ui/toggle";
+import { VoiceInputButton } from "@/components/voice-input-button";
+import { useI18n } from "@/lib/i18n";
 
 import equal from "fast-deep-equal";
 
@@ -67,6 +69,7 @@ function PureMultiModalInput({
   handleSubmit: UseChatHelpers["handleSubmit"];
   className?: string;
 }) {
+  const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
@@ -243,7 +246,7 @@ function PureMultiModalInput({
       <Textarea
         data-testid="multimodal-input"
         ref={textareaRef}
-        placeholder="Ask anything..."
+        placeholder={t("inputPlaceholder")}
         value={input}
         onChange={handleInput}
         className={cn(
@@ -298,6 +301,22 @@ function PureMultiModalInput({
             </TooltipTrigger>
             <TooltipContent>
               <p>{isWebSearchEnabled ? "Disable web search" : "Enable web search"}</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <VoiceInputButton
+                  disabled={status !== "ready"}
+                  onTranscript={(text) => {
+                    setInput((prev) => (prev ? `${prev} ${text}` : text));
+                    textareaRef.current?.focus();
+                  }}
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t("voiceTooltip")}</p>
             </TooltipContent>
           </Tooltip>
         </div>

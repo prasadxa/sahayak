@@ -23,7 +23,8 @@ import equal from "fast-deep-equal";
 
 import { Doc, Id } from "@/convex/_generated/dataModel";
 
-type Document = Doc<"documents">;
+// Document queries never return the owner's userId.
+type Document = Omit<Doc<"documents">, "userId">;
 
 interface ToolResult {
   id: Id<"documents">;
@@ -106,7 +107,6 @@ export function DocumentPreview({ isReadonly, result, args }: DocumentPreviewPro
           title: block.title,
           kind: block.kind,
           content: block.content,
-          userId: "noop" as Id<"users">,
         }
       : null;
 

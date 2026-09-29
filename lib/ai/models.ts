@@ -1,26 +1,33 @@
-import { openai } from "@ai-sdk/openai";
-import { customProvider, extractReasoningMiddleware, wrapLanguageModel } from "ai";
+import {
+  customProvider,
+  extractReasoningMiddleware,
+  wrapLanguageModel,
+} from "ai";
+
+import { callmissed, CALLMISSED_MODELS } from "@/lib/callmissed";
 
 export const DEFAULT_CHAT_MODEL: string = "chat-model-small";
 
+const cm = callmissed();
+
 export const myProvider = customProvider({
   languageModels: {
-    "chat-model-small": openai.responses("gpt-4o-mini"),
-    "chat-model-large": openai.responses("gpt-4o"),
+    "chat-model-small": cm.chat(CALLMISSED_MODELS.chatSmall),
+    "chat-model-large": cm.chat(CALLMISSED_MODELS.chatLarge),
     "chat-model-reasoning": wrapLanguageModel({
-      model: openai.responses("o4-mini"),
+      model: cm.chat(CALLMISSED_MODELS.reasoning),
       middleware: extractReasoningMiddleware({ tagName: "think" }),
     }),
-    "title-model": openai("gpt-4.1-nano"),
-    "block-model": openai("gpt-4o-mini"),
+    "title-model": cm.chat(CALLMISSED_MODELS.title),
+    "block-model": cm.chat(CALLMISSED_MODELS.block),
   },
   textEmbeddingModels: {
-    "text-embedding-3-small": openai.embedding("text-embedding-3-small"),
-    "text-embedding-3-large": openai.embedding("text-embedding-3-large"),
+    "text-embedding-3-small": cm.textEmbeddingModel(CALLMISSED_MODELS.embedding),
+    "text-embedding-3-large": cm.textEmbeddingModel("text-embedding-3-large"),
   },
   imageModels: {
-    "image-model-small": openai.image("dall-e-2"),
-    "image-model-large": openai.image("dall-e-3"),
+    "image-model-small": cm.image(CALLMISSED_MODELS.imageSmall),
+    "image-model-large": cm.image(CALLMISSED_MODELS.imageLarge),
   },
 });
 
@@ -33,17 +40,17 @@ interface ChatModel {
 export const chatModels: Array<ChatModel> = [
   {
     id: "chat-model-small",
-    name: "Mini model",
-    description: "Fast model for simple tasks",
+    name: "Sahayak Fast",
+    description: "Indic-optimised model for everyday questions",
   },
   {
     id: "chat-model-large",
-    name: "Large model",
-    description: "Powerful model for complex tasks",
+    name: "Sahayak Pro",
+    description: "Larger model for detailed legal & scheme guidance",
   },
   {
     id: "chat-model-reasoning",
-    name: "Reasoning model",
-    description: "Advanced model for reasoning, multi-step tasks",
+    name: "Sahayak Reasoning",
+    description: "Step-by-step reasoning for complex questions",
   },
 ];

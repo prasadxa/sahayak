@@ -1,0 +1,21 @@
+# GPIO TALK button -> F8 key (uinput). setup.sh substitutes @USER@, @HOME@ and @REPO_DIR@
+# and installs this to /etc/systemd/system/sahayak-button.service.
+[Unit]
+Description=Sahayak kiosk TALK button (GPIO17 -> F8, LED GPIO27)
+# Independent of sahayak-web.service: with a hosted KIOSK_URL that service is
+# disabled, and the button only needs /dev/uinput and the GPIO chip.
+After=systemd-udev-settle.service
+
+[Service]
+Type=simple
+User=@USER@
+SupplementaryGroups=gpio input
+# lgpio writes small notify files into the working directory.
+WorkingDirectory=@HOME@
+ExecStart=/usr/bin/python3 -u @REPO_DIR@/hardware/pi/talk_button.py
+Restart=always
+RestartSec=2
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

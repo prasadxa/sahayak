@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 
 export const imageDocumentHandler = createDocumentHandler<"image">({
   kind: "image",
-  onCreateDocument: async ({ title, dataStream }) => {
+  onCreateDocument: async ({ title, dataStream, token }) => {
     let draftContent = "";
 
     try {
@@ -25,9 +25,11 @@ export const imageDocumentHandler = createDocumentHandler<"image">({
       });
 
       try {
-        const result = await fetchAction(api.files.storeAiImage, {
-          base64Image: image.base64,
-        });
+        const result = await fetchAction(
+          api.files.storeAiImage,
+          { base64Image: image.base64 },
+          { token }
+        );
         return JSON.stringify(result);
       } catch (error) {
         return draftContent;
@@ -37,7 +39,7 @@ export const imageDocumentHandler = createDocumentHandler<"image">({
       throw error;
     }
   },
-  onUpdateDocument: async ({ description, dataStream }) => {
+  onUpdateDocument: async ({ description, dataStream, token }) => {
     let draftContent = "";
 
     try {
@@ -55,9 +57,11 @@ export const imageDocumentHandler = createDocumentHandler<"image">({
       });
 
       try {
-        const result = await fetchAction(api.files.storeAiImage, {
-          base64Image: image.base64,
-        });
+        const result = await fetchAction(
+          api.files.storeAiImage,
+          { base64Image: image.base64 },
+          { token }
+        );
         return JSON.stringify(result);
       } catch (error) {
         return draftContent;

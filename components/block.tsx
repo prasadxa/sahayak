@@ -36,7 +36,8 @@ import { Doc } from "@/convex/_generated/dataModel";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-type Document = Doc<"documents">;
+// Document queries never return the owner's userId.
+type Document = Omit<Doc<"documents">, "userId">;
 
 export const blockDefinitions = [textBlock, codeBlock, imageBlock, sheetBlock];
 export type BlockKind = (typeof blockDefinitions)[number]["kind"];
@@ -177,7 +178,6 @@ function PureBlock({
           updateDocument({
             documentId: block.documentId,
             content: updatedContent,
-            userId: currentDocument.userId,
           })
             .then(() => {
               setIsContentDirty(false);

@@ -11,14 +11,17 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 
 import { getCurrentUser } from "@/lib/auth";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 
 export default async function ChatPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const { id: chatId } = params;
 
+  // Pass the caller's token: Convex only returns private chats to their owner.
+  const token = (await convexAuthNextjsToken().catch(() => undefined)) ?? undefined;
   const [user, chat] = await Promise.all([
     getCurrentUser(),
-    fetchQuery(api.chats.getChatById, { chatId }),
+    fetchQuery(api.chats.getChatById, { chatId }, { token }),
   ]);
 
   if (!chat) {
@@ -35,7 +38,11 @@ export default async function ChatPage(props: { params: Promise<{ id: string }> 
     }
   }
 
-  const messagesFromDb = await fetchQuery(api.messages.getMessagesByChatId, { chatId });
+  const messagesFromDb = await fetchQuery(
+    api.messages.getMessagesByChatId,
+    { chatId },
+    { token }
+  );
 
   const cookieStore = await cookies();
   const chatModelFromCookie = cookieStore.get("chat-model");

@@ -1,13 +1,15 @@
-import Link from "next/link";
+"use client";
 
 import { motion } from "framer-motion";
 import { Doc } from "@/convex/_generated/dataModel";
+import { useI18n } from "@/lib/i18n";
 
 interface OverviewProps {
   user: Doc<"users"> | null;
 }
 
 export const Overview = ({ user }: OverviewProps) => {
+  const { t } = useI18n();
   const firstName = user?.name ? user.name.split(" ")[0] : null;
 
   return (
@@ -19,10 +21,20 @@ export const Overview = ({ user }: OverviewProps) => {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
-        transition={{ delay: 0.5 }}
-        className="text-2xl font-semibold"
+        transition={{ delay: 0.4 }}
+        className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-400"
       >
-        {firstName ? `Hello, ${firstName}.` : "Hello there!"}
+        <span className="inline-block size-2 rounded-full bg-emerald-600" />
+        {t("overviewBadge")}
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ delay: 0.5 }}
+        className="text-2xl font-semibold mt-2"
+      >
+        {firstName ? t("greetingNamed", { name: firstName }) : t("greeting")}
       </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -31,7 +43,7 @@ export const Overview = ({ user }: OverviewProps) => {
         transition={{ delay: 0.6 }}
         className="text-2xl text-zinc-500"
       >
-        How can I help you today?
+        {t("askMe")}
       </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -40,18 +52,7 @@ export const Overview = ({ user }: OverviewProps) => {
         transition={{ delay: 0.7 }}
         className="mt-4"
       >
-        <p className="font-medium text-sm text-muted-foreground">
-          Type questions, request code, or ask for explanations on any topic. If you like
-          it, contribute or star on{" "}
-          <Link
-            className="underline underline-offset-4"
-            href="https://github.com/murabcd/openchat"
-            target="_blank"
-          >
-            GitHub
-          </Link>
-          .
-        </p>
+        <p className="font-medium text-sm text-muted-foreground">{t("askHint")}</p>
       </motion.div>
     </div>
   );

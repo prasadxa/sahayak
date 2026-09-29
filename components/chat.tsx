@@ -64,39 +64,19 @@ export const Chat = ({
     experimental_throttle: 100,
     sendExtraMessageFields: true,
     generateId: generateUUID,
-    experimental_prepareRequestBody: (body) => {
-      console.log(
-        "[Chat.tsx] experimental_prepareRequestBody - input body:",
-        JSON.stringify(body)
-      );
-      console.log(
-        "[Chat.tsx] experimental_prepareRequestBody - last message in body:",
-        JSON.stringify(body.messages.at(-1))
-      );
-      return {
-        id,
-        message: body.messages.at(-1),
-        selectedChatModel: selectedChatModel,
-        selectedVisibilityType: selectedVisibilityType,
-        data: body.requestData,
-      };
-    },
-    onFinish: (data) => {
-      // Could add Convex mutation here if needed
-      console.log("[Chat.tsx] onFinish - data:", JSON.stringify(data));
-    },
+    experimental_prepareRequestBody: (body) => ({
+      id,
+      message: body.messages.at(-1),
+      selectedChatModel: selectedChatModel,
+      selectedVisibilityType: selectedVisibilityType,
+      data: body.requestData,
+    }),
     onError: () => {
       toast.error("An error occured, please try again");
     },
   });
 
   useEffect(() => {
-    console.log(
-      "[Chat.tsx] Messages or Status updated:",
-      JSON.stringify(messages),
-      "Status:",
-      status
-    );
     if (autoResume) {
       experimental_resume();
     }

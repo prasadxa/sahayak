@@ -8,8 +8,6 @@ import { useWindowSize } from "usehooks-ts";
 
 import { useBlock } from "@/hooks/use-block";
 
-import { getDocumentTimestampByIndex } from "@/lib/utils";
-
 import { LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -18,7 +16,8 @@ import { Doc } from "@/convex/_generated/dataModel";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 
-type Document = Doc<"documents">;
+// Document queries never return the owner's userId.
+type Document = Omit<Doc<"documents">, "userId">;
 
 interface VersionFooterProps {
   handleVersionChange: (type: "next" | "prev" | "toggle" | "latest") => void;
@@ -64,7 +63,7 @@ export const VersionFooter = ({
               await deleteDocuments({
                 documentId: block.documentId,
                 timestamp: new Date(
-                  getDocumentTimestampByIndex(documents, currentVersionIndex)
+                  documents[currentVersionIndex]?._creationTime ?? Date.now()
                 ).getTime(),
               });
             } finally {

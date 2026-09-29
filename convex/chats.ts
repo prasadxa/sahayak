@@ -3,27 +3,39 @@ import { mutation, query } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+import { findChat, readableChat, requireOwnedChat, requireUserId } from "./access";
+import { getRole } from "./roles";
+
 export const saveChat = mutation({
   args: {
     title: v.string(),
     chatId: v.string(),
-    userId: v.id("users"),
     visibility: v.union(v.literal("private"), v.literal("public")),
+    // UI language code at chat creation (e.g. "hi"), for analytics.
+    language: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("chats", args);
+    const userId = await requireUserId(ctx);
+    if (await findChat(ctx, args.chatId)) {
+      throw new Error("A chat with this id already exists");
+    }
+    return await ctx.db.insert("chats", { ...args, userId });
   },
 });
 
 export const listChats = query({
   args: {
-    userId: v.id("users"),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    // A kiosk account serves many walk-in citizens: never show their history.
+    if (!userId || (await getRole(ctx, userId)) === "kiosk") {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
     const result = await ctx.db
       .query("chats")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .order("desc")
       .paginate(args.paginationOpts);
 
@@ -33,22 +45,13 @@ export const listChats = query({
 
 export const getChatById = query({
   args: { chatId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("chats")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.chatId))
-      .first();
-  },
+  handler: async (ctx, args) => readableChat(ctx, args.chatId),
 });
 
 export const deleteChatById = mutation({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const chat = await ctx.db
-      .query("chats")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.id))
-      .first();
-    if (!chat) throw new Error("Chat not found");
+    const { chat } = await requireOwnedChat(ctx, args.id);
 
     const messages = await ctx.db
       .query("messages")
@@ -87,6 +90,7 @@ export const voteMessage = mutation({
     type: v.union(v.literal("up"), v.literal("down")),
   },
   handler: async (ctx, args) => {
+    await requireOwnedChat(ctx, args.chatId);
     const existingVote = await ctx.db
       .query("votes")
       .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
@@ -109,6 +113,7 @@ export const voteMessage = mutation({
 export const getVotesByChatId = query({
   args: { chatId: v.string() },
   handler: async (ctx, args) => {
+    if (!(await readableChat(ctx, args.chatId))) return [];
     return await ctx.db
       .query("votes")
       .withIndex("by_chatId", (q) => q.eq("chatId", args.chatId))
@@ -122,12 +127,7 @@ export const updateChatVisibilityById = mutation({
     visibility: v.union(v.literal("private"), v.literal("public")),
   },
   handler: async (ctx, args) => {
-    const chat = await ctx.db
-      .query("chats")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.chatId))
-      .first();
-
-    if (!chat) throw new Error("Chat not found");
+    const { chat } = await requireOwnedChat(ctx, args.chatId);
 
     return await ctx.db.patch(chat._id, {
       visibility: args.visibility,
@@ -141,14 +141,7 @@ export const togglePinChat = mutation({
   },
   returns: v.object({ isPinned: v.boolean() }),
   handler: async (ctx, args) => {
-    const chat = await ctx.db
-      .query("chats")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.chatId))
-      .first();
-
-    if (!chat) {
-      throw new Error("Chat not found");
-    }
+    const { chat } = await requireOwnedChat(ctx, args.chatId);
 
     await ctx.db.patch(chat._id, { isPinned: !chat.isPinned });
 
@@ -162,14 +155,7 @@ export const renameChat = mutation({
     newTitle: v.string(),
   },
   handler: async (ctx, args) => {
-    const chat = await ctx.db
-      .query("chats")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.chatId))
-      .first();
-
-    if (!chat) {
-      throw new Error("Chat not found");
-    }
+    const { chat } = await requireOwnedChat(ctx, args.chatId);
 
     await ctx.db.patch(chat._id, { title: args.newTitle });
   },
@@ -188,7 +174,7 @@ export const deleteAllUserChats = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
 
-    const deletePromises: Promise<any>[] = [];
+    const deletePromises: Promise<void>[] = [];
 
     for (const chat of userChats) {
       const messages = await ctx.db

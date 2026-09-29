@@ -12,7 +12,11 @@ export default defineSchema({
     avatarUrl: v.optional(v.string()),
     avatarStorageId: v.optional(v.id("_storage")),
     isMemoryEnabled: v.optional(v.boolean()),
-  }).index("email", ["email"]),
+    // member | officer | admin | kiosk (see lib/constants.ts). Missing = member.
+    role: v.optional(v.string()),
+  })
+    .index("email", ["email"])
+    .index("by_role", ["role"]),
 
   chats: defineTable({
     title: v.string(),
@@ -20,6 +24,8 @@ export default defineSchema({
     chatId: v.string(),
     userId: v.id("users"),
     isPinned: v.optional(v.boolean()),
+    // UI language code at chat creation (e.g. "hi"), for analytics.
+    language: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
     .index("by_chatId", ["chatId"]),
@@ -96,4 +102,97 @@ export default defineSchema({
     streamId: v.string(),
     chatId: v.string(),
   }).index("by_chatId", ["chatId"]),
+
+  // Shared knowledge base — cooperative laws, schemes, PMFBY, finance.
+  // Chunks belonging to one ingested source share `entryId`.
+  kb_entries: defineTable({
+    entryId: v.string(),
+    title: v.string(),
+    category: v.string(), // laws | schemes | pmfby | finance | grievance | general
+    source: v.optional(v.string()),
+    content: v.string(),
+    chunkIndex: v.number(),
+    // Optional so ingestion survives an embeddings outage; missing chunks
+    // are found by full-text search and embedded later by a backfill.
+    embedding: v.optional(v.array(v.float64())),
+    // true while the chunk awaits an embedding (indexed so the backfill
+    // never scans embedded rows). Unset once embedded.
+    needsEmbedding: v.optional(v.boolean()),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_entry", ["entryId"])
+    .index("by_category", ["category"])
+    .index("by_title", ["title"])
+    .index("by_needsEmbedding", ["needsEmbedding"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536, // CallMissed text-embedding-3-small
+      filterFields: ["category"],
+    })
+    .searchIndex("search_content", {
+      searchField: "content",
+      filterFields: ["category"],
+    }),
+
+  // One small row per ingested source (entryId), maintained by kb.ts on
+  // insert, delete and embedding backfill, so listings and dashboard counts
+  // never read the ~12 KB chunk rows. Rebuild with `kb:migrateSources`.
+  kb_sources: defineTable({
+    entryId: v.string(),
+    title: v.string(),
+    category: v.string(),
+    source: v.optional(v.string()),
+    chunks: v.number(),
+    pendingEmbeddings: v.number(),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_entry", ["entryId"])
+    .index("by_title", ["title"]),
+
+  // One row per knowledge-base search, for the officer dashboard.
+  kb_queries: defineTable({
+    query: v.string(),
+    category: v.optional(v.string()),
+    language: v.optional(v.string()),
+    hits: v.number(),
+    topScore: v.optional(v.number()),
+    mode: v.union(v.literal("vector"), v.literal("text"), v.literal("none")),
+    createdAt: v.number(),
+  }).index("by_createdAt", ["createdAt"]),
+
+  grievances: defineTable({
+    userId: v.id("users"),
+    refId: v.string(),
+    category: v.string(),
+    subject: v.string(),
+    description: v.string(),
+    contact: v.optional(v.string()),
+    status: v.string(), // submitted | in_review | resolved | rejected
+    channel: v.optional(v.string()), // web | kiosk
+    district: v.optional(v.string()),
+    societyName: v.optional(v.string()),
+    language: v.optional(v.string()),
+    updates: v.optional(
+      v.array(
+        v.object({
+          status: v.string(),
+          note: v.string(),
+          at: v.number(),
+          byName: v.string(),
+        })
+      )
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_refId", ["refId"])
+    .index("by_status", ["status"]),
+
+  // Generated read-aloud clips; an hourly cron deletes old ones.
+  tts_audio: defineTable({
+    storageId: v.id("_storage"),
+    createdAt: v.number(),
+  }).index("by_createdAt", ["createdAt"]),
 });

@@ -7,6 +7,7 @@ import type { UIMessage } from "ai";
 import { cookies } from "next/headers";
 
 import { fetchQuery } from "convex/nextjs";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { api } from "@/convex/_generated/api";
 
 export async function saveChatModelAsCookie(model: string) {
@@ -15,9 +16,14 @@ export async function saveChatModelAsCookie(model: string) {
 }
 
 export async function getSuggestions({ documentId }: { documentId: string }) {
-  const suggestions = await fetchQuery(api.suggestions.getSuggestionsByDocumentId, {
-    documentId,
-  });
+  // Suggestions are owner-only, so the query must run as the signed-in user.
+  const token = await convexAuthNextjsToken().catch(() => undefined);
+  if (!token) return [];
+  const suggestions = await fetchQuery(
+    api.suggestions.getSuggestionsByDocumentId,
+    { documentId },
+    { token }
+  );
   return suggestions ?? [];
 }
 

@@ -1,68 +1,107 @@
-<a href="https://openchat-beta.vercel.app">
-  <img alt="An Open-source AI Chatbot Built With Next.js." src="./public/preview/openchat.png">
-  <h1 align="center">OpenChat</h1>
-</a>
+<h1 align="center">Sahayak — Cooperative Governance & Legal Assistance Chatbot</h1>
 
 <p align="center">
-  An Open-source AI Chatbot Built With Next.js, Convex, and AI SDK.
+  A multilingual AI assistant for cooperative members, farmers and rural
+  stakeholders — cooperative laws, Ministry of Cooperation schemes, PMFBY crop
+  insurance, financial literacy and grievance redressal, in 22 Indian languages.
 </p>
 
 <p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#model-providers"><strong>Model Providers</strong></a> ·
-  <a href="#deploy-your-own"><strong>Deploy Your Own</strong></a> ·
-  <a href="#running-locally"><strong>Running locally</strong></a>
+  Built on <a href="https://github.com/murabcd/openchat">openchat</a> (open-source Next.js + Convex + AI SDK chatbot)
+  · Powered by <a href="https://callmissed.com">CallMissed</a> APIs
 </p>
-<br/>
 
 ## Features
 
-- [Next.js](https://nextjs.org) App Router
-  - Advanced routing for seamless navigation and performance
-  - React Server Components (RSCs) for server-side rendering and performance improvements
-- [AI SDK](https://sdk.vercel.ai/docs)
-  - Unified API for generating text, structured objects, and tool calls with LLMs
-  - Hooks for building dynamic chat and generative user interfaces
-  - Assisting with code generation, images, text editing, handling data, and searching the web
-- [Redis](https://vercel.com/marketplace/redis)
-  - Persistent message streaming for real-time updates
-- [Shadcn/ui](https://ui.shadcn.com)
-  - Styling with [Tailwind CSS](https://tailwindcss.com)
-  - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
-- Data Persistence
-  - [Convex](https://www.convex.dev/) for saving chat history and user data
-  - [Convex file storage](https://docs.convex.dev/file-storage) for efficient file storage
-  - [Convex Vector Search](https://docs.convex.dev/search/vector-search) for long-term memory storage and retrieval
-- [Convex Auth](https://labs.convex.dev/auth)
-  - Simple and secure authentication
+- **Multilingual chat** — UI language selector for 22 Indian languages; the
+  assistant answers in the user's language (saaras / bulbul Indic models).
+- **Voice input** — microphone in the composer records speech, uploads to
+  Convex storage, transcribed by CallMissed STT (`saaras:v3`, auto-detects
+  code-mixed speech).
+- **Voice output** — speaker button on any reply speaks it back via CallMissed
+  TTS (`bulbul:v3`).
+- **Knowledge base (shared RAG)** — curated corpus of cooperative laws,
+  schemes and procedures stored in Convex with vector search
+  (`text-embedding-3-small`, 1536 dims). Manage it at `/knowledge` — paste
+  text, fetch a URL, or upload PDF/text files. The `searchKnowledgeBase` tool
+  grounds answers in this corpus.
+- **Personal memory** — per-user vector memory (`memories` table) remembers
+  user context like district, society name, crops.
+- **Grievance redressal** — the `fileGrievance` tool files complaints into
+  Convex with a reference ID; users track them at `/grievances`.
+- **Web search** — optional live web search via CallMissed `POST /v1/search`.
+- **Documents/blocks** — draft grievance letters, applications and documents
+  in the side-by-side editor.
+- **Auth** — email/password (Convex Auth Password provider) + optional Google
+  OAuth.
 
-## Model Providers
+## Stack
 
-This app ships with [Openai](https://openai.com/) provider as the default. However, with the [AI SDK](https://sdk.vercel.ai/docs), you can switch LLM providers to [Ollama](https://ollama.com), [Anthropic](https://anthropic.com), [Cohere](https://cohere.com/), and [many more](https://sdk.vercel.ai/providers/ai-sdk-providers) with just a few lines of code.
+| Layer | Tech |
+| --- | --- |
+| Frontend | Next.js 15, React 19, Tailwind, Radix/shadcn |
+| Backend | Convex — database, file storage, vector search, actions |
+| AI | CallMissed OpenAI-compatible API (`api.callmissed.com/v1`) for chat completions, embeddings, STT, TTS and web search |
+| Streaming | AI SDK `useChat` + `streamText` via `app/(chat)/api/chat` |
 
-- Mini model (`gpt-4o-mini`): A fast and efficient model suitable for simple tasks
-- Large model (`gpt-4o`): A powerful model designed for complex tasks
-- Reasoning model (`o4-mini`): An advanced model configured for multi-step reasoning tasks
+## Environment
 
-## Deploy Your Own
+Copy `.env.example` → `.env.local`. Required:
 
-You can deploy your own version of the OpenChat to Vercel with one click:
+- `CONVEX_DEPLOYMENT` + `NEXT_PUBLIC_CONVEX_URL` — from `npx convex dev`
+- `ADMIN_EMAILS` (Convex env) — comma-separated emails that get the admin role
+- `CALLMISSED_API_KEY` — a `cm_` key with `llm`, `stt`, `tts`, `search` permissions.
+  **Set it twice**: in `.env.local` (Next.js route handlers) AND via
+  `npx convex env set CALLMISSED_API_KEY cm_...` (Convex actions — knowledge
+  ingestion, voice STT/TTS read it from Convex env).
+- `NEXT_PUBLIC_SITE_URL` — `http://localhost:3000` for dev
+- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — optional (email/password works without)
+- `REDIS_URL` — optional (enables resumable streams)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmurabcd%2Fopenchat&env=CONVEX_DEPLOY_KEY,OPENAI_API_KEY&envDescription=Learn%20more%20about%20how%20to%20get%20the%20API%20Keys%20for%20the%20application&envLink=https%3A%2F%2Fgithub.com%2Fmurabcd%2Fopenchat%2Fblob%2Fmain%2F.env.example&demo-title=OpenChat&demo-description=An%20open-source%20AI%20chatbot%20built%20with%20Next.js%2015%2C%20Convex%2C%20and%20AI%20SDK.&demo-url=https%3A%2F%2Fopenchat-beta.vercel.app)
+Model ids are env-overridable (`CALLMISSED_MODEL_*`, `CALLMISSED_TTS_VOICE`) —
+defaults are free-tier CallMissed models: `sarvam-105b-conversations`,
+`sarvam-105b`, `kimi-k2.6`, `glm-4.7-flash`, `text-embedding-3-small`,
+`saaras:v3`, `bulbul:v3`.
+
+## SIH 2026: PS 26088 (Hardware)
+
+| Expected feature | Where |
+| --- | --- |
+| Multilingual conversational interface | Language selector (23 languages); UI localised in 11; replies in native script |
+| Cooperative laws and by-laws | KB-grounded answers (`data/kb/`, `/knowledge`) |
+| Ministry of Cooperation schemes | KB corpus plus live web search |
+| PMFBY and agricultural support | KB plus the `calculatePmfbyPremium` tool |
+| Financial literacy | KB corpus (KCC, interest, fraud safety) |
+| Grievance redressal | `fileGrievance` tool, `/grievances`, public `/track`, officer console `/admin/grievances` |
+| Voice for rural users | Mic input (saaras STT), read-aloud (bulbul TTS), hands-free kiosk |
+| Mobile and web | Responsive, installable PWA |
+| **Hardware** | Raspberry Pi 4 kiosk with a physical TALK button and receipt printer (`/kiosk`, `hardware/pi/`) |
+
+See `docs/sih-demo-script.md` for the judge demo and `docs/architecture.md`
+for the file structure and data schema.
 
 ## Running locally
 
-You will need to use the environment variables [defined in `.env.example`](.env.example) to run OpenChat. It's recommended you use [Vercel Environment Variables](https://vercel.com/docs/projects/environment-variables) for this, but a `.env` file is all that is necessary.
-
-> Note: You should not commit your `.env` file or it will expose secrets that will allow others to control access to your various OpenAI and authentication provider accounts.
-
-1. Install Vercel CLI: `npm i -g vercel`
-2. Link local instance with Vercel and GitHub accounts (creates `.vercel` directory): `vercel link`
-3. Download your environment variables: `vercel env pull`
-
 ```bash
-bun install
-bun dev
+npm install
+npx convex dev --once                 # push schema/functions (first run creates the project)
+npx convex env set ADMIN_EMAILS you@example.com
+npm run seed:kb                       # load the curated knowledge base
+npm run dev                           # Next.js + Convex watcher
+npm test                              # Vitest + convex-test
 ```
 
-Your app should now be running on [localhost:3000](http://localhost:3000/).
+The app runs on [localhost:3000](http://localhost:3000/). Sign up with the
+email in `ADMIN_EMAILS` to get the officer dashboard at `/admin`, and assign
+`officer` or `kiosk` roles at `/admin/users`.
+
+## Raspberry Pi kiosk
+
+See `hardware/pi/README.md` for the parts list (about ₹12–15k), wiring (TALK
+button on GPIO17, LED on GPIO27), and one-shot setup (`hardware/pi/setup.sh`).
+The Pi runs `next start` locally and opens Chromium in kiosk mode on `/kiosk`,
+signed in with a `kiosk`-role account.
+
+## Project layout
+
+See `docs/architecture.md`.

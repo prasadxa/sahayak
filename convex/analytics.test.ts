@@ -1,0 +1,126 @@
+import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
+import { api, internal } from "./_generated/api";
+import schema from "./schema";
+import { modules } from "./test.setup";
+import { asUser } from "./test.helpers";
+
+const DAY = 24 * 60 * 60 * 1000;
+
+describe("analytics.overview", () => {
+  it("forbids a member", async () => {
+    const t = convexTest(schema, modules);
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+    await expect(client.query(api.analytics.overview, {})).rejects.toThrow(/Forbidden/);
+  });
+
+  it("returns counts matching seeded rows for an officer", async () => {
+    const t = convexTest(schema, modules);
+    const member = await asUser(t, { email: "farmer@example.com" });
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+
+    await member.client.mutation(api.grievances.file, {
+      category: "loan_credit",
+      subject: "Loan",
+      description: "Loan not sanctioned",
+    });
+    await member.client.mutation(api.grievances.file, {
+      category: "election",
+      subject: "Election",
+      description: "Election not held",
+    });
+
+    // Entry A: 2 chunks, one awaiting embedding. Entry B: 1 chunk, embedded.
+    const emb = new Array(1536).fill(0.01);
+    await t.mutation(internal.kb.insertChunks, {
+      entryId: "a",
+      title: "A",
+      category: "laws",
+      chunks: [{ content: "a0", embedding: emb }, { content: "a1" }],
+    });
+    await t.mutation(internal.kb.insertChunks, {
+      entryId: "b",
+      title: "B",
+      category: "pmfby",
+      chunks: [{ content: "b0", embedding: emb }],
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kb_queries", {
+        query: "PMFBY premium", category: "pmfby", language: "hi", hits: 3,
+        topScore: 0.8, mode: "vector", createdAt: now - 1000,
+      });
+      await ctx.db.insert("kb_queries", {
+        query: "PACS membership", language: "mr", hits: 2, mode: "text",
+        createdAt: now - 2000,
+      });
+      await ctx.db.insert("kb_queries", {
+        query: "dairy subsidy", language: "hi", hits: 0, mode: "none",
+        createdAt: now - 3000,
+      });
+      await ctx.db.insert("kb_queries", {
+        query: "fishery loan", category: "schemes", hits: 0, mode: "text",
+        createdAt: now - 4000,
+      });
+      // Older than 30 days: excluded from `queries`.
+      await ctx.db.insert("kb_queries", {
+        query: "ancient question", language: "en", hits: 0, mode: "none",
+        createdAt: now - 45 * DAY,
+      });
+    });
+
+    const o = await officer.client.query(api.analytics.overview, {});
+
+    expect(o.grievances.total).toBe(2);
+    expect(o.grievances.byStatus).toMatchObject({ submitted: 2 });
+    expect(o.grievances.byCategory).toMatchObject({ loan_credit: 1, election: 1 });
+
+    expect(o.kb).toEqual({ entries: 2, chunks: 3, pendingEmbeddings: 1 });
+
+    expect(o.queries.total).toBe(4);
+    expect(o.queries.truncated).toBe(false);
+    expect(o.queries.byLanguage).toMatchObject({ hi: 2, mr: 1 });
+    expect(o.queries.byCategory).toMatchObject({ pmfby: 1, schemes: 1 });
+    expect(o.queries.byMode).toEqual({ vector: 1, text: 2, none: 1 });
+
+    expect(o.unanswered.map((u) => u.query)).toEqual([
+      "dairy subsidy",
+      "fishery loan",
+      "ancient question",
+    ]);
+    expect(o.unanswered[0]).toMatchObject({ language: "hi" });
+    expect(Object.keys(o.unanswered[0]).sort()).toEqual(["createdAt", "language", "query"]);
+  });
+
+  it("reads KB counts from kb_sources, not the chunk rows", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    // A chunk row with no kb_sources row (pre-migration) is not scanned.
+    await t.run((ctx) =>
+      ctx.db.insert("kb_entries", {
+        entryId: "legacy", title: "Legacy", category: "laws", content: "x",
+        chunkIndex: 0, createdAt: Date.now(),
+      })
+    );
+    const o = await officer.client.query(api.analytics.overview, {});
+    expect(o.kb).toEqual({ entries: 0, chunks: 0, pendingEmbeddings: 0 });
+  });
+
+  it("caps the 30-day query scan at 5000 rows and says so", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 5001; i++) {
+        await ctx.db.insert("kb_queries", {
+          query: `q${i}`, language: "hi", hits: 1, mode: "text", createdAt: now - i,
+        });
+      }
+    });
+    const o = await officer.client.query(api.analytics.overview, {});
+    expect(o.queries.total).toBe(5000);
+    expect(o.queries.truncated).toBe(true);
+    expect(o.queries.byLanguage).toEqual({ hi: 5000 });
+  }, 30_000);
+});

@@ -76,6 +76,10 @@ export const createResource = action({
       throw new Error("Authenticated user not found in database");
     }
     const userId = user._id;
+    // One kiosk account serves many citizens: never store or recall personal details.
+    if ((await ctx.runQuery(internal.roles.roleOf, { userId })) === "kiosk") {
+      return "Personal memory is not available on the kiosk. Nothing was saved.";
+    }
 
     const memoryEnabled = user.isMemoryEnabled ?? true;
     if (!memoryEnabled) {
@@ -119,6 +123,10 @@ export const searchResource = action({
       return "Authenticated user not found in database.";
     }
     const userId = user._id;
+    // One kiosk account serves many citizens: never store or recall personal details.
+    if ((await ctx.runQuery(internal.roles.roleOf, { userId })) === "kiosk") {
+      return "Personal memory is not available on the kiosk.";
+    }
 
     const queryEmbedding = await generateEmbedding(args.query);
 

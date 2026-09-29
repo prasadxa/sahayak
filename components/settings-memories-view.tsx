@@ -22,7 +22,7 @@ import {
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Id } from "@/convex/_generated/dataModel";
+import { Doc, Id } from "@/convex/_generated/dataModel";
 
 export const SettingsMemoriesView = () => {
   const memories = useQuery(api.memories.listMemories);
@@ -71,7 +71,7 @@ export const SettingsMemoriesView = () => {
         {memories && memories.length > 0 && (
           <ScrollArea className="h-[400px] w-full pr-4">
             <ul className="space-y-2">
-              {memories.map((memory) => (
+              {memories.map((memory: Doc<"memories">) => (
                 <li
                   key={memory._id}
                   className="flex items-start justify-between gap-2 text-sm p-2 rounded-lg hover:bg-muted/50"

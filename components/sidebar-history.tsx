@@ -354,7 +354,7 @@ export function SidebarHistory({
 
   const { results, status, loadMore } = usePaginatedQuery(
     api.chats.listChats,
-    user ? { userId: user._id } : "skip",
+    user ? {} : "skip",
     { initialNumItems: INITIAL_CHATS_PER_PAGE }
   );
 

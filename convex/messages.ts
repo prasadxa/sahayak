@@ -1,6 +1,8 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+import { readableChat, requireOwnedChat } from "./access";
+
 export const deleteTrailingMessages = mutation({
   args: { messageId: v.string() },
   handler: async (ctx, { messageId }) => {
@@ -12,6 +14,7 @@ export const deleteTrailingMessages = mutation({
     if (!message) {
       throw new Error(`Message not found with id: ${messageId}`);
     }
+    await requireOwnedChat(ctx, message.chatId);
 
     const messagesToDelete = await ctx.db
       .query("messages")
@@ -57,6 +60,9 @@ export const saveMessages = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    for (const chatId of new Set(args.messages.map((m) => m.chatId))) {
+      await requireOwnedChat(ctx, chatId);
+    }
     const existingMessages: { messageId: string; _id: any; [key: string]: any }[] = [];
     for (const msg of args.messages) {
       const existing = await ctx.db
@@ -82,6 +88,7 @@ export const saveMessages = mutation({
 export const getMessagesByChatId = query({
   args: { chatId: v.string() },
   handler: async (ctx, args) => {
+    if (!(await readableChat(ctx, args.chatId))) return [];
     return await ctx.db
       .query("messages")
       .withIndex("by_chatId", (q) => q.eq("chatId", args.chatId))

@@ -12,9 +12,11 @@ interface UpdateDocumentProps {
   user: Doc<"users">;
   dataStream: DataStreamWriter;
   chatId: string;
+  /** Convex Auth token of the signed-in user. */
+  token: string;
 }
 
-export const updateDocument = ({ user, dataStream, chatId }: UpdateDocumentProps) =>
+export const updateDocument = ({ user, dataStream, chatId, token }: UpdateDocumentProps) =>
   tool({
     description: "Update a document with the given description.",
     parameters: z.object({
@@ -22,9 +24,11 @@ export const updateDocument = ({ user, dataStream, chatId }: UpdateDocumentProps
       description: z.string().describe("The description of changes that need to be made"),
     }),
     execute: async ({ id, description }) => {
-      const document = await fetchQuery(api.documents.getDocumentById, {
-        documentId: id,
-      });
+      const document = await fetchQuery(
+        api.documents.getDocumentById,
+        { documentId: id },
+        { token }
+      );
 
       if (!document) {
         return {
@@ -51,6 +55,7 @@ export const updateDocument = ({ user, dataStream, chatId }: UpdateDocumentProps
         dataStream,
         user: user._id,
         chatId,
+        token,
       });
 
       dataStream.writeData({ type: "finish", content: "" });

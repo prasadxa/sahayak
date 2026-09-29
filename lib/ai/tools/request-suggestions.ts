@@ -22,18 +22,28 @@ type Suggestion = {
 interface RequestSuggestionsProps {
   user: Doc<"users">;
   dataStream: DataStreamWriter;
+  /** Convex Auth token of the signed-in user. */
+  token: string;
 }
 
-export const requestSuggestions = ({ user, dataStream }: RequestSuggestionsProps) =>
+export const requestSuggestions = ({
+  user,
+  dataStream,
+  token,
+}: RequestSuggestionsProps) =>
   tool({
     description: "Request suggestions for a document",
     parameters: z.object({
-      documentId: z.string().describe("The ID of the document to request edits"),
+      documentId: z
+        .string()
+        .describe("The ID of the document to request edits"),
     }),
     execute: async ({ documentId }) => {
-      const document = await fetchQuery(api.documents.getDocumentById, {
-        documentId: documentId,
-      });
+      const document = await fetchQuery(
+        api.documents.getDocumentById,
+        { documentId: documentId },
+        { token },
+      );
 
       if (!document || !document.content) {
         return {
@@ -57,31 +67,30 @@ export const requestSuggestions = ({ user, dataStream }: RequestSuggestionsProps
       });
 
       for await (const element of elementStream) {
+        // The owner is set server-side from the token, so it is not sent to Convex.
         const suggestion = {
           originalText: element.originalSentence,
           suggestedText: element.suggestedSentence,
           description: element.description,
           isResolved: false,
-          userId: user._id,
           documentId: documentId,
           suggestionId: generateUUID(),
         };
 
         dataStream.writeData({
           type: "suggestion",
-          content: suggestion,
+          content: { ...suggestion, userId: user._id },
         });
 
         suggestions.push(suggestion);
       }
 
       if (user) {
-        await fetchMutation(api.suggestions.saveSuggestions, {
-          suggestions: suggestions.map((suggestion) => ({
-            ...suggestion,
-            userId: user._id,
-          })),
-        });
+        await fetchMutation(
+          api.suggestions.saveSuggestions,
+          { suggestions },
+          { token },
+        );
       }
 
       return {

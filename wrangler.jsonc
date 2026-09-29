@@ -1,0 +1,36 @@
+// Cloudflare Workers config for the Sahayak Next.js app (OpenNext adapter).
+// See docs/deploy-cloudflare.md. Convex stays on Convex cloud; only Next.js
+// runs here. account_id is intentionally not set: wrangler uses the logged-in
+// account (or CLOUDFLARE_ACCOUNT_ID).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sahayak",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      // Self-reference binding used by OpenNext (must match "name").
+      // See https://opennext.js.org/cloudflare/caching
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "sahayak"
+    }
+  ],
+  // Non-secret runtime vars. NEXT_PUBLIC_* are also inlined at build time
+  // (see the cf:build script in package.json); keep both in sync.
+  // Secrets (CALLMISSED_API_KEY) are set with `wrangler secret put`, and
+  // locally in .dev.vars.
+  "vars": {
+    "CONVEX_DEPLOYMENT": "dev:whimsical-possum-664",
+    "NEXT_PUBLIC_CONVEX_URL": "https://whimsical-possum-664.convex.cloud",
+    "NEXT_PUBLIC_CONVEX_SITE_URL": "https://whimsical-possum-664.convex.site",
+    "NEXT_PUBLIC_SITE_URL": "https://sahayak.rough-cell-383c.workers.dev"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

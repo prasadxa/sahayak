@@ -9,6 +9,7 @@ import { useWindowSize } from "usehooks-ts";
 
 import { Plus } from "lucide-react";
 
+import { LanguageSelector } from "@/components/language-selector";
 import { ModelSelector } from "@/components/model-selector";
 import { SidebarToggle } from "@/components/sidebar-toggle";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,8 @@ function PureChatHeader({
           isChatSelected={isChatSelected}
         />
       )}
+
+      <LanguageSelector className="order-3 md:order-4" />
 
       <Unauthenticated>
         <Button className="flex md:h-[34px] order-4 md:ml-auto" asChild>

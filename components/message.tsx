@@ -19,7 +19,13 @@ import { Markdown } from "@/components/markdown";
 import { PreviewAttachment } from "@/components/preview-attachment";
 import { MessageReasoning } from "@/components/message-reasoning";
 import { MessageMemorizing } from "@/components/message-memorizing";
-import { Weather } from "@/components/weather";
+import {
+  CHIP_TOOLS,
+  GrievanceResult,
+  LookupResult,
+  PmfbyResult,
+  ToolCallChip,
+} from "@/components/tool-ui";
 import { DocumentToolCall, DocumentToolResult } from "@/components/document";
 import { DocumentPreview } from "@/components/document-preview";
 import { ImageModal } from "@/components/image-modal";
@@ -184,15 +190,8 @@ const PurePreviewMessage = ({
                 if (state === "call") {
                   const { args } = toolInvocation;
                   return (
-                    <div
-                      key={toolCallId}
-                      className={cn({
-                        skeleton: ["getWeather"].includes(toolName),
-                      })}
-                    >
-                      {toolName === "getWeather" ? (
-                        <Weather />
-                      ) : toolName === "createDocument" ? (
+                    <div key={toolCallId}>
+                      {toolName === "createDocument" ? (
                         <DocumentPreview isReadonly={isReadonly} args={args} />
                       ) : toolName === "updateDocument" ? (
                         <DocumentToolCall
@@ -216,6 +215,8 @@ const PurePreviewMessage = ({
                           toolName={toolName}
                           isLoading={state === "call"}
                         />
+                      ) : CHIP_TOOLS.includes(toolName) ? (
+                        <ToolCallChip toolName={toolName} />
                       ) : null}
                     </div>
                   );
@@ -226,9 +227,7 @@ const PurePreviewMessage = ({
 
                   return (
                     <div key={toolCallId}>
-                      {toolName === "getWeather" ? (
-                        <Weather weatherAtLocation={result} />
-                      ) : toolName === "createDocument" ? (
+                      {toolName === "createDocument" ? (
                         <DocumentPreview isReadonly={isReadonly} result={result} />
                       ) : toolName === "updateDocument" ? (
                         <DocumentToolResult
@@ -254,6 +253,12 @@ const PurePreviewMessage = ({
                           isLoading={false}
                           result={result}
                         />
+                      ) : toolName === "fileGrievance" ? (
+                        <GrievanceResult result={result} />
+                      ) : toolName === "calculatePmfbyPremium" ? (
+                        <PmfbyResult result={result} />
+                      ) : ["searchKnowledgeBase", "webSearch"].includes(toolName) ? (
+                        <LookupResult toolName={toolName} />
                       ) : (
                         <pre>{JSON.stringify(result, null, 2)}</pre>
                       )}

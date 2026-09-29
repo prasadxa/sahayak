@@ -8,9 +8,9 @@ export const env = createEnv({
    */
   server: {
     CONVEX_DEPLOYMENT: z.string().min(1),
-    OPENAI_API_KEY: z.string().min(1),
-    AUTH_GOOGLE_ID: z.string().min(1),
-    AUTH_GOOGLE_SECRET: z.string().min(1),
+    CALLMISSED_API_KEY: z.string().min(1),
+    AUTH_GOOGLE_ID: z.string().optional(),
+    AUTH_GOOGLE_SECRET: z.string().optional(),
   },
 
   /**
@@ -32,7 +32,7 @@ export const env = createEnv({
     NEXT_PUBLIC_CONVEX_URL: process.env.NEXT_PUBLIC_CONVEX_URL,
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
 
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    CALLMISSED_API_KEY: process.env.CALLMISSED_API_KEY,
     AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID,
     AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET,
   },
