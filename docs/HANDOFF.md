@@ -137,6 +137,7 @@ A Convex push is **not** rolled back. `ci.yml` runs on PRs and on pushes to `mai
 ## 7. Known issues and limitations
 
 - **Embeddings:** the CallMissed `/v1/embeddings` endpoint returned **502** all of 2026-09-30, so every chunk (dev and prod, 49 each) is unembedded and search is keyword-only. When it recovers, run `npx convex run kb:backfillEmbeddingsInternal '{}'` for dev and add `--prod` for prod.
+- **CallMissed STT also 502'd** briefly on 2026-09-30 evening: `voice.transcribe` reached CallMissed and got a 502. The kiosk handled it gracefully (Marathi "didn't catch that" prompt, ready to retry). Chat and TTS (`/audio/speech`) stayed up. If the demo needs STT, check `curl -X POST https://api.callmissed.com/v1/audio/transcriptions` first.
 - **Hardware:** the kiosk has **not been tested on real Pi hardware** (GPIO button, thermal printer, mic and speaker). Push-to-talk with a real microphone is untested in automation.
 - ~~**Production is empty**~~ Prod is seeded (24 demo grievances, 120 query rows) and has accounts: `kiosk@sahayak.in` (kiosk), `member@sahayak.in` (member), `officer@sahayak.in` (officer, granted via `grantRole` — a Password account; for a real officer prefer a Google sign-in + `/admin/users`). Passwords were communicated to the owner; rotate before the event if needed.
 - **URL guard:** it is lexical only. DNS rebinding isn't covered; the risk is accepted because ingest is staff-only.
@@ -148,7 +149,7 @@ A Convex push is **not** rolled back. `ci.yml` runs on PRs and on pushes to `mai
 
 ## 8. Suggested next work (in priority order)
 
-1. ~~**Demo readiness**~~ Mostly done (2026-09-30): prod seeded, accounts created, demo rehearsed on the live site with Playwright (login → Hindi → PMFBY card ₹750 → grievance `GRV-…` → `/track` → officer console). Two prod bugs found and fixed: password sign-in never navigated (redirectTo is OAuth-only) and `__name is not defined` killed the inline theme script on every page. Still unrehearsed: voice (mic/TTS on real hardware), officer status update → live `/track` refresh.
+1. ~~**Demo readiness**~~ Done (2026-09-30): prod seeded, accounts created, full demo rehearsed on the live site with Playwright — login → Hindi → PMFBY card ₹750 → grievance `GRV-…` → `/track` → officer console → officer sets *in review* → citizen `/track` updates live; kiosk account → `/kiosk` redirect + मराठी grid + welcome TTS + PTT→STT pipeline (STT itself was down at CallMissed — see §7). Prod bugs found and fixed: password sign-in never navigated (redirectTo is OAuth-only), `__name is not defined` crashed the inline theme script on every page, and a native-script district name crashed `grievanceStats` (`byDistrict` is now a list, not a Record). Remaining unrehearsed: physical mic/audio/printer on the Pi (task 3).
 2. **Pi bring-up:**
    - Flash Raspberry Pi OS Bookworm and run `hardware/pi/setup.sh`.
    - Set `KIOSK_URL`/`NEXT_PUBLIC_TRACK_BASE_URL=https://sahayak.rough-cell-383c.workers.dev`.
