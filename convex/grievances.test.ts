@@ -256,3 +256,255 @@ describe("grievances.listAll and stats", () => {
     expect(stats.byCategory).toMatchObject({ election: 2, loan_credit: 1 });
   });
 });
+
+const DAY = 24 * 60 * 60 * 1000;
+
+type SeedRow = {
+  refId: string;
+  status?: string;
+  category?: string;
+  district?: string;
+  createdAt: number;
+  updates?: { status: string; note: string; at: number; byName: string }[];
+};
+
+/** Insert grievance rows directly so createdAt and the timeline can be set. */
+async function seedGrievances(t: TestConvex<typeof schema>, rows: SeedRow[]) {
+  const { userId } = await asUser(t, { email: `seed-${rows[0]?.refId}@example.com` });
+  await t.run(async (ctx) => {
+    for (const r of rows) {
+      await ctx.db.insert("grievances", {
+        userId,
+        refId: r.refId,
+        category: r.category ?? "loan_credit",
+        subject: `Subject ${r.refId}`,
+        description: `Description ${r.refId}`,
+        status: r.status ?? "submitted",
+        createdAt: r.createdAt,
+        ...(r.district !== undefined ? { district: r.district } : {}),
+        ...(r.updates ? { updates: r.updates } : {}),
+      });
+    }
+  });
+}
+
+describe("grievances SLA, districts and resolution time", () => {
+  it("listAll adds ageDays and overdue to each row", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await seedGrievances(t, [
+      { refId: "GRV-00000001", createdAt: now - 20 * DAY },
+      { refId: "GRV-00000002", status: "in_review", createdAt: now - 16 * DAY },
+      { refId: "GRV-00000003", createdAt: now - 3 * DAY },
+      { refId: "GRV-00000004", status: "resolved", createdAt: now - 40 * DAY },
+    ]);
+    const rows = await officer.client.query(api.grievances.listAll, {});
+    const byRef = Object.fromEntries(rows.map((r) => [r.refId, r]));
+    expect(byRef["GRV-00000001"]).toMatchObject({ overdue: true, ageDays: 20 });
+    expect(byRef["GRV-00000002"]).toMatchObject({ overdue: true, ageDays: 16 });
+    expect(byRef["GRV-00000003"]).toMatchObject({ overdue: false, ageDays: 3 });
+    expect(byRef["GRV-00000004"]).toMatchObject({ overdue: false, ageDays: 40 });
+    // Existing fields are still there.
+    expect(byRef["GRV-00000001"].subject).toBe("Subject GRV-00000001");
+  });
+
+  it("listAll filters by normalised district, including Unspecified", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await seedGrievances(t, [
+      { refId: "GRV-00000011", district: "  NASHIK ", createdAt: now - 1000 },
+      { refId: "GRV-00000012", district: "nashik", createdAt: now - 2000 },
+      { refId: "GRV-00000013", district: "Pune", createdAt: now - 3000 },
+      { refId: "GRV-00000014", createdAt: now - 4000 },
+      { refId: "GRV-00000015", district: "   ", createdAt: now - 5000 },
+    ]);
+    const nashik = await officer.client.query(api.grievances.listAll, { district: "Nashik" });
+    // Newest insert first (listAll orders by _creationTime desc).
+    expect(nashik.map((g) => g.refId)).toEqual(["GRV-00000012", "GRV-00000011"]);
+    const lower = await officer.client.query(api.grievances.listAll, { district: " nashik" });
+    expect(lower).toHaveLength(2);
+    const none = await officer.client.query(api.grievances.listAll, {
+      district: "Unspecified",
+    });
+    expect(none.map((g) => g.refId)).toEqual(["GRV-00000015", "GRV-00000014"]);
+    expect(await officer.client.query(api.grievances.listAll, {})).toHaveLength(5);
+  });
+
+  it("stats counts overdue, districts and average resolution time", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    const c1 = now - 30 * DAY;
+    const c2 = now - 20 * DAY;
+    await seedGrievances(t, [
+      { refId: "GRV-00000021", district: "nashik", createdAt: now - 20 * DAY },
+      { refId: "GRV-00000022", district: "Nashik ", status: "in_review", createdAt: now - 2 * DAY },
+      {
+        refId: "GRV-00000023",
+        district: "pune",
+        status: "resolved",
+        createdAt: c1,
+        updates: [
+          { status: "submitted", note: "received", at: c1, byName: "Sahayak" },
+          { status: "in_review", note: "looking", at: c1 + DAY, byName: "Officer" },
+          { status: "resolved", note: "fixed", at: c1 + 4 * DAY, byName: "Officer" },
+        ],
+      },
+      {
+        refId: "GRV-00000024",
+        status: "resolved",
+        createdAt: c2,
+        updates: [
+          { status: "submitted", note: "received", at: c2, byName: "Sahayak" },
+          { status: "resolved", note: "first try", at: c2 + DAY, byName: "Officer" },
+          { status: "in_review", note: "reopened", at: c2 + 2 * DAY, byName: "Officer" },
+          { status: "resolved", note: "fixed", at: c2 + 10 * DAY, byName: "Officer" },
+        ],
+      },
+      // Resolved but no timeline (pre-timeline row): skipped for the average.
+      { refId: "GRV-00000025", status: "resolved", createdAt: now - 50 * DAY },
+      { refId: "GRV-00000026", status: "rejected", createdAt: now - 50 * DAY },
+    ]);
+    const s = await officer.client.query(api.grievances.stats, {});
+    expect(s.total).toBe(6);
+    expect(s.overdue).toBe(1);
+    // (4 + 10) / 2: the latest transition into resolved counts.
+    expect(s.avgResolutionDays).toBe(7);
+    expect(s.byDistrict).toEqual({ Nashik: 2, Pune: 1, Unspecified: 3 });
+  });
+
+  it("stats returns null average resolution when nothing is resolved", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const s = await officer.client.query(api.grievances.stats, {});
+    expect(s).toMatchObject({ total: 0, overdue: 0, avgResolutionDays: null, byDistrict: {} });
+  });
+});
+
+describe("grievances.exportRows", () => {
+  it("forbids members and signed-out callers", async () => {
+    const t = convexTest(schema, modules);
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+    await expect(client.query(api.grievances.exportRows, {})).rejects.toThrow(/Forbidden/);
+    await expect(t.query(api.grievances.exportRows, {})).rejects.toThrow(/Not authenticated/);
+  });
+
+  it("returns flat rows with ISO dates, SLA fields and the last note", async () => {
+    const t = convexTest(schema, modules);
+    const member = await asUser(t, { email: "farmer@example.com" });
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const { refId } = await member.client.mutation(api.grievances.file, sample);
+    await officer.client.mutation(api.grievances.updateStatus, {
+      refId,
+      status: "in_review",
+      note: "Forwarded to the branch manager",
+    });
+    const rows = await officer.client.query(api.grievances.exportRows, {});
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    expect(Object.keys(r).sort()).toEqual(
+      [
+        "refId", "createdAt", "status", "category", "subject", "description", "contact",
+        "district", "societyName", "channel", "language", "ageDays", "overdue", "lastUpdate",
+      ].sort()
+    );
+    expect(r).toMatchObject({
+      refId,
+      status: "in_review",
+      category: "loan_credit",
+      subject: sample.subject,
+      description: sample.description,
+      contact: sample.contact,
+      district: "Nashik",
+      societyName: sample.societyName,
+      channel: "web",
+      language: "mr",
+      ageDays: 0,
+      overdue: false,
+      lastUpdate: "Forwarded to the branch manager",
+    });
+    expect(r.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  it("uses empty strings for missing optional fields and filters like listAll", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await seedGrievances(t, [
+      { refId: "GRV-00000031", district: "pune", createdAt: now - 20 * DAY },
+      { refId: "GRV-00000032", category: "election", createdAt: now - 1000 },
+      { refId: "GRV-00000033", status: "resolved", district: "Pune", createdAt: now - 2000 },
+    ]);
+    const all = await officer.client.query(api.grievances.exportRows, {});
+    expect(all.map((r) => r.refId)).toEqual(["GRV-00000033", "GRV-00000032", "GRV-00000031"]);
+    const legacy = all.find((r) => r.refId === "GRV-00000032");
+    expect(legacy).toMatchObject({
+      contact: "",
+      district: "",
+      societyName: "",
+      channel: "",
+      language: "",
+      lastUpdate: "Grievance received",
+    });
+    const overdue = all.find((r) => r.refId === "GRV-00000031");
+    expect(overdue).toMatchObject({ overdue: true, ageDays: 20, district: "Pune" });
+
+    const pune = await officer.client.query(api.grievances.exportRows, { district: "PUNE" });
+    expect(pune.map((r) => r.refId)).toEqual(["GRV-00000033", "GRV-00000031"]);
+    const resolvedPune = await officer.client.query(api.grievances.exportRows, {
+      district: "Pune",
+      status: "resolved",
+    });
+    expect(resolvedPune.map((r) => r.refId)).toEqual(["GRV-00000033"]);
+    const election = await officer.client.query(api.grievances.exportRows, {
+      category: "election",
+    });
+    expect(election.map((r) => r.refId)).toEqual(["GRV-00000032"]);
+    const unspecified = await officer.client.query(api.grievances.exportRows, {
+      district: "Unspecified",
+    });
+    expect(unspecified.map((r) => r.refId)).toEqual(["GRV-00000032"]);
+  });
+
+  it("returns at most 2000 rows", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await seedGrievances(
+      t,
+      Array.from({ length: 2001 }, (_, i) => ({
+        refId: `GRV-${i.toString(16).toUpperCase().padStart(8, "0")}`,
+        createdAt: now - i,
+      }))
+    );
+    const rows = await officer.client.query(api.grievances.exportRows, {});
+    expect(rows).toHaveLength(2000);
+  }, 30_000);
+});
+
+describe("grievance SLA uses the caller's clock", () => {
+  it("marks a fresh grievance overdue when the caller's now is past the target", async () => {
+    const t = convexTest(schema, modules);
+    const citizen = await asUser(t, { email: "farmer.sla@example.com" });
+    const officer = await asUser(t, { email: "officer.sla@example.com", role: "officer" });
+    await citizen.client.mutation(api.grievances.file, {
+      category: "membership",
+      subject: "Membership pending",
+      description: "Applied long ago",
+    });
+    const later = Date.now() + 20 * 24 * 60 * 60 * 1000;
+
+    const rows = await officer.client.query(api.grievances.listAll, { now: later });
+    expect(rows[0].overdue).toBe(true);
+    expect(rows[0].ageDays).toBeGreaterThanOrEqual(19);
+    expect((await officer.client.query(api.grievances.stats, { now: later })).overdue).toBe(1);
+    expect((await officer.client.query(api.analytics.overview, { now: later })).grievances.overdue).toBe(1);
+    const exported = await officer.client.query(api.grievances.exportRows, { now: later });
+    expect(exported[0].overdue).toBe(true);
+
+    // Without `now`, the server clock is used: filed just now, not overdue.
+    expect((await officer.client.query(api.grievances.listAll, {}))[0].overdue).toBe(false);
+  });
+});

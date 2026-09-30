@@ -1,0 +1,65 @@
+# CI: lint, typecheck, unit tests and a Cloudflare Workers build.
+# Needs no secrets: env.mjs validation is skipped with SKIP_ENV_VALIDATION and
+# the public vars are placeholders. See docs/ci-cd.md.
+name: CI
+
+# pull_request covers every branch that has a PR; push is limited to main so a
+# branch with an open PR isn't checked twice per push.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, Workers build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # env.mjs (t3-env) skips validation when this is set, so the build does
+      # not need CALLMISSED_API_KEY or CONVEX_DEPLOYMENT.
+      SKIP_ENV_VALIDATION: "1"
+      # Placeholders. They are inlined into the client bundle, which is never
+      # deployed from this workflow. NEXT_PUBLIC_SITE_URL and
+      # NEXT_PUBLIC_APP_VERSION are left unset so cf:build's fallbacks
+      # (the sahayak-dev workers.dev URL, "dev") are exercised.
+      NEXT_PUBLIC_CONVEX_URL: https://example.convex.cloud
+      NEXT_PUBLIC_CONVEX_SITE_URL: https://example.convex.site
+      # Free-plan limit for the gzipped worker (MiB).
+      WORKER_GZIP_LIMIT_MIB: "3"
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22: wrangler 4.x declares engines.node >= 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests (vitest + convex-test)
+        run: npm test
+
+      - name: Cloudflare Workers build (OpenNext)
+        run: npm run cf:build
+
+      # Same config the production deploy uses (wrangler.jsonc env.production).
+      # Warns only; deploy.yml fails on the same check before touching Convex.
+      - name: Worker bundle size (wrangler dry run)
+        run: bash .github/scripts/worker-size.sh warn --env production

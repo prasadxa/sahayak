@@ -1,10 +1,28 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { paginationOptsValidator } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { findChat, readableChat, requireOwnedChat, requireUserId } from "./access";
-import { getRole } from "./roles";
+import { getRole, roleOfUser } from "./roles";
+
+/** Deletes a chat and everything keyed by its chatId: messages, votes, documents, streams. */
+async function deleteChatAndChildren(ctx: MutationCtx, chat: Doc<"chats">): Promise<void> {
+  const chatId = chat.chatId;
+  const [messages, votes, documents, streams] = await Promise.all([
+    ctx.db.query("messages").withIndex("by_chatId", (q) => q.eq("chatId", chatId)).collect(),
+    ctx.db.query("votes").withIndex("by_chatId", (q) => q.eq("chatId", chatId)).collect(),
+    ctx.db.query("documents").withIndex("by_chatId", (q) => q.eq("chatId", chatId)).collect(),
+    ctx.db.query("streams").withIndex("by_chatId", (q) => q.eq("chatId", chatId)).collect(),
+  ]);
+  await Promise.all([
+    ...[...votes, ...messages, ...documents, ...streams].map((row) => ctx.db.delete(row._id)),
+    ctx.db.delete(chat._id),
+  ]);
+}
 
 export const saveChat = mutation({
   args: {
@@ -52,34 +70,52 @@ export const deleteChatById = mutation({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const { chat } = await requireOwnedChat(ctx, args.id);
+    await deleteChatAndChildren(ctx, chat);
+  },
+});
 
-    const messages = await ctx.db
-      .query("messages")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.id))
-      .collect();
+/** Kiosk chats hold walk-in citizens' details; keep them only this long. */
+export const KIOSK_CHAT_TTL_MS = 60 * 60 * 1000;
+const KIOSK_PURGE_BATCH = 50;
 
-    const votes = await ctx.db
-      .query("votes")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.id))
-      .collect();
+/**
+ * Cron (every 15 min): deletes chats owned by kiosk-role accounts that are
+ * older than KIOSK_CHAT_TTL_MS, KIOSK_PURGE_BATCH per run, and reschedules
+ * itself while more remain.
+ */
+export const purgeKioskChats = internalMutation({
+  args: {},
+  returns: v.object({ deleted: v.number(), more: v.boolean() }),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - KIOSK_CHAT_TTL_MS;
+    const kioskUsers = (
+      await ctx.db
+        .query("users")
+        .withIndex("by_role", (q) => q.eq("role", "kiosk"))
+        .collect()
+    ).filter((u) => roleOfUser(u) === "kiosk");
 
-    const documents = await ctx.db
-      .query("documents")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.id))
-      .collect();
+    // Collect one more than a batch to learn whether another run is needed.
+    const candidates: Doc<"chats">[] = [];
+    for (const user of kioskUsers) {
+      const need = KIOSK_PURGE_BATCH + 1 - candidates.length;
+      if (need <= 0) break;
+      const rows = await ctx.db
+        .query("chats")
+        .withIndex("by_userId", (q) => q.eq("userId", user._id).lt("_creationTime", cutoff))
+        .take(need);
+      candidates.push(...rows);
+    }
 
-    const streams = await ctx.db
-      .query("streams")
-      .withIndex("by_chatId", (q) => q.eq("chatId", args.id))
-      .collect();
-
-    await Promise.all([
-      ...votes.map((vote) => ctx.db.delete(vote._id)),
-      ...messages.map((message) => ctx.db.delete(message._id)),
-      ...documents.map((document) => ctx.db.delete(document._id)),
-      ...streams.map((stream) => ctx.db.delete(stream._id)),
-      ctx.db.delete(chat._id),
-    ]);
+    const batch = candidates.slice(0, KIOSK_PURGE_BATCH);
+    for (const chat of batch) {
+      await deleteChatAndChildren(ctx, chat);
+    }
+    const more = candidates.length > KIOSK_PURGE_BATCH;
+    if (more) {
+      await ctx.scheduler.runAfter(0, internal.chats.purgeKioskChats, {});
+    }
+    return { deleted: batch.length, more };
   },
 });
 
@@ -91,9 +127,18 @@ export const voteMessage = mutation({
   },
   handler: async (ctx, args) => {
     await requireOwnedChat(ctx, args.chatId);
+    // The message must belong to this chat, or the owner of chat A could vote
+    // on (or flip the vote of) a message in someone else's chat B.
+    const message = await ctx.db
+      .query("messages")
+      .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
+      .first();
+    if (!message || message.chatId !== args.chatId) throw new Error("Forbidden");
+
     const existingVote = await ctx.db
       .query("votes")
       .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
+      .filter((q) => q.eq(q.field("chatId"), args.chatId))
       .first();
 
     if (existingVote) {
@@ -174,35 +219,9 @@ export const deleteAllUserChats = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect();
 
-    const deletePromises: Promise<void>[] = [];
-
     for (const chat of userChats) {
-      const messages = await ctx.db
-        .query("messages")
-        .withIndex("by_chatId", (q) => q.eq("chatId", chat.chatId))
-        .collect();
-      const votes = await ctx.db
-        .query("votes")
-        .withIndex("by_chatId", (q) => q.eq("chatId", chat.chatId))
-        .collect();
-      const documents = await ctx.db
-        .query("documents")
-        .withIndex("by_chatId", (q) => q.eq("chatId", chat.chatId))
-        .collect();
-      const streams = await ctx.db
-        .query("streams")
-        .withIndex("by_chatId", (q) => q.eq("chatId", chat.chatId))
-        .collect();
-
-      messages.forEach((msg) => deletePromises.push(ctx.db.delete(msg._id)));
-      votes.forEach((vote) => deletePromises.push(ctx.db.delete(vote._id)));
-      documents.forEach((doc) => deletePromises.push(ctx.db.delete(doc._id)));
-      streams.forEach((stream) => deletePromises.push(ctx.db.delete(stream._id)));
-
-      deletePromises.push(ctx.db.delete(chat._id));
+      await deleteChatAndChildren(ctx, chat);
     }
-
-    await Promise.all(deletePromises);
 
     return { deletedChatsCount: userChats.length };
   },

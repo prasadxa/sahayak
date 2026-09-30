@@ -651,6 +651,8 @@ export const searchKnowledgeBase = action({
 export const listEntries = query({
   args: {},
   handler: async (ctx) => {
+    // Signed-in only (the /knowledge page is behind the middleware too).
+    if (!(await getAuthUserId(ctx))) return [];
     const rows = await ctx.db.query("kb_sources").collect();
     return rows
       .map((s) => ({

@@ -1,0 +1,308 @@
+# Deploy: checks, then worker build + size gate, Convex functions, Cloudflare
+# worker (wrangler env "production" = worker "sahayak"), smoke test, and an
+# automatic worker rollback if the smoke test fails.
+# One-time setup (secrets, Convex deploy key, Cloudflare token, branch policy):
+# docs/ci-cd.md.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queue deploys one at a time; never cancel a deploy halfway through.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  WRANGLER_SEND_METRICS: "false"
+
+jobs:
+  checks:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SKIP_ENV_VALIDATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22: wrangler 4.x declares engines.node >= 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  # Skips the deploy (with a warning, not a failure) until the production
+  # secrets exist, so a fresh fork or an unconfigured repo stays green.
+  # `environment: production` is only here to read the environment secrets.
+  # Only main deploys: a "Run workflow" on another branch skips this job and
+  # the deploy (the environment's branch policy would reject it anyway).
+  preflight:
+    name: Check deploy secrets
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      ready: ${{ steps.secrets.outputs.ready }}
+    steps:
+      - id: secrets
+        env:
+          HAS_CONVEX: ${{ secrets.CONVEX_DEPLOY_KEY != '' }}
+          HAS_CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          HAS_CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          missing=""
+          [ "$HAS_CONVEX" = "true" ] || missing="$missing CONVEX_DEPLOY_KEY"
+          [ "$HAS_CF_TOKEN" = "true" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ "$HAS_CF_ACCOUNT" = "true" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::warning title=Deploy skipped::Missing production secrets:${missing}. See docs/ci-cd.md or run scripts/setup-github-secrets.sh."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    name: Deploy to production
+    needs: [checks, preflight]
+    if: github.ref == 'refs/heads/main' && needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.config.outputs.site_url }}
+    env:
+      # Used when the NEXT_PUBLIC_SITE_URL variable is unset.
+      DEFAULT_SITE_URL: https://sahayak.rough-cell-383c.workers.dev
+      # Workers Free limit for the gzipped worker (MiB). Raise to 10 on Workers Paid.
+      WORKER_GZIP_LIMIT_MIB: "3"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Validates everything the later steps put into shell commands, the
+      # bundle or curl, and exports SITE_URL, CONVEX_DEPLOYMENT_TARGET,
+      # BUILT_CONVEX_URL and BUILT_CONVEX_SITE_URL to $GITHUB_ENV.
+      - name: Check configuration
+        id: config
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          RAW_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+        run: |
+          # 1. Site URL, before anything uses it. OpenNext runs wrangler through
+          #    a shell, so a loose value could inject commands via --var.
+          site_url="${RAW_SITE_URL:-$DEFAULT_SITE_URL}"
+          site_re='^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$'
+          if ! [[ "$site_url" =~ $site_re ]]; then
+            echo "::error title=Bad NEXT_PUBLIC_SITE_URL::The NEXT_PUBLIC_SITE_URL variable must be an https origin such as https://sahayak.example.org (no path, query or spaces)."
+            exit 1
+          fi
+          site_url="${site_url%/}"
+
+          # 2. Required secrets.
+          missing=""
+          [ -n "$CONVEX_DEPLOY_KEY" ] || missing="$missing CONVEX_DEPLOY_KEY"
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error title=Missing secrets::Set these secrets on the production environment:${missing}. See docs/ci-cd.md or run scripts/setup-github-secrets.sh."
+            exit 1
+          fi
+
+          # 3. Convex target. A deploy key looks like "prod:<name>|<secret>" or
+          #    "dev:<name>|<secret>". The part before "|" names the deployment;
+          #    it is not secret. The build needs the deployment URLs before
+          #    `convex deploy` runs, so they are derived from <name>.
+          target="${CONVEX_DEPLOY_KEY%%|*}"
+          target="$(printf '%s' "$target" | tr -d '[:space:]')"
+          if ! [[ "$target" =~ ^(prod|dev):[a-z0-9-]+$ ]]; then
+            echo "::error title=Unsupported CONVEX_DEPLOY_KEY::Use a production (prod:...) or development (dev:...) deploy key. Preview keys and project tokens are not supported by this workflow."
+            exit 1
+          fi
+          convex_name="${target#*:}"
+          {
+            echo "CONVEX_DEPLOYMENT_TARGET=$target"
+            echo "BUILT_CONVEX_URL=https://${convex_name}.convex.cloud"
+            echo "BUILT_CONVEX_SITE_URL=https://${convex_name}.convex.site"
+            echo "SITE_URL=$site_url"
+          } >> "$GITHUB_ENV"
+          echo "site_url=$site_url" >> "$GITHUB_OUTPUT"
+          echo "Convex deployment: $target (https://${convex_name}.convex.cloud)"
+          echo "Site URL: $site_url"
+
+      # The worker must end up with CALLMISSED_API_KEY, or every request fails
+      # env.mjs validation. With the GitHub secret set, it's synced below.
+      # Without it, the worker must already have one (names only; values are
+      # never listed).
+      - name: Check the worker's CALLMISSED_API_KEY
+        env:
+          HAS_CM_KEY: ${{ secrets.CALLMISSED_API_KEY != '' }}
+        run: |
+          if [ "$HAS_CM_KEY" = "true" ]; then
+            echo "CALLMISSED_API_KEY is set in GitHub; it is synced to the worker before the deploy."
+            exit 0
+          fi
+          err="$RUNNER_TEMP/secret-list.err"
+          status=0
+          out="$(npx wrangler secret list --env production --format json 2>"$err")" || status=$?
+          if [ "$status" -ne 0 ]; then
+            cat "$err" >&2
+            echo "::error title=CALLMISSED_API_KEY missing::First deploy needs CALLMISSED_API_KEY: the GitHub secret is empty and the secrets of the sahayak worker could not be listed (it may not exist yet). Run scripts/setup-github-secrets.sh, or: npx wrangler secret put CALLMISSED_API_KEY --env production"
+            exit 1
+          fi
+          found=0
+          # Exit 0: has the key, 1: doesn't, 2: no JSON array found. Tries each
+          # "[" in case wrangler printed a "[WARNING]" line before the JSON.
+          printf '%s' "$out" | node -e '
+            let t = "";
+            process.stdin.on("data", (d) => (t += d)).on("end", () => {
+              const end = t.lastIndexOf("]") + 1;
+              for (let i = t.indexOf("["); i !== -1 && i < end; i = t.indexOf("[", i + 1)) {
+                let list;
+                try { list = JSON.parse(t.slice(i, end)); } catch { continue; }
+                if (!Array.isArray(list)) continue;
+                process.exit(list.some((s) => s && s.name === "CALLMISSED_API_KEY") ? 0 : 1);
+              }
+              process.exit(2);
+            });' || found=$?
+          case "$found" in
+            0) echo "The sahayak worker already has CALLMISSED_API_KEY; keeping it." ;;
+            1) echo "::error title=CALLMISSED_API_KEY missing::First deploy needs CALLMISSED_API_KEY: the GitHub secret is empty and the sahayak worker has no such secret. Run scripts/setup-github-secrets.sh, or: npx wrangler secret put CALLMISSED_API_KEY --env production"; exit 1 ;;
+            *) echo "::error title=CALLMISSED_API_KEY check failed::Could not parse the output of 'wrangler secret list --format json'."; exit 1 ;;
+          esac
+
+      # Nothing has been pushed yet: a build or size failure stops here with
+      # Convex and the worker untouched.
+      - name: Build the worker
+        id: build
+        env:
+          # Server secrets are not needed at build time; the worker validates
+          # its runtime env on every request (smoke test below).
+          SKIP_ENV_VALIDATION: "1"
+        run: |
+          NEXT_PUBLIC_CONVEX_URL="$BUILT_CONVEX_URL" \
+          NEXT_PUBLIC_CONVEX_SITE_URL="$BUILT_CONVEX_SITE_URL" \
+          NEXT_PUBLIC_SITE_URL="$SITE_URL" \
+          NEXT_PUBLIC_APP_VERSION="${GITHUB_SHA::7}" \
+            npm run cf:build
+
+      - name: Worker size gate (wrangler dry run)
+        id: size
+        run: bash .github/scripts/worker-size.sh fail --env production
+
+      # Typechecks, then pushes functions + schema to the key's deployment.
+      # Not rolled back automatically if a later step fails (docs/ci-cd.md).
+      - name: Deploy Convex functions
+        id: convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex deploy --message "GitHub Actions ${GITHUB_SHA::7}"
+
+      - name: Sync CALLMISSED_API_KEY worker secret
+        env:
+          CALLMISSED_API_KEY: ${{ secrets.CALLMISSED_API_KEY }}
+        run: |
+          if [ -z "$CALLMISSED_API_KEY" ]; then
+            echo "::notice title=Secret sync skipped::CALLMISSED_API_KEY is not set in GitHub; keeping the worker's existing secret."
+            exit 0
+          fi
+          printf '%s' "$CALLMISSED_API_KEY" | npx wrangler secret put CALLMISSED_API_KEY --env production
+
+      # --env production selects wrangler.jsonc env.production (worker
+      # "sahayak"). --var overrides its vars so the runtime matches the build.
+      - name: Deploy the worker
+        id: worker
+        run: |
+          npx opennextjs-cloudflare deploy --env production -- \
+            --var "CONVEX_DEPLOYMENT:$CONVEX_DEPLOYMENT_TARGET" \
+            --var "NEXT_PUBLIC_CONVEX_URL:$BUILT_CONVEX_URL" \
+            --var "NEXT_PUBLIC_CONVEX_SITE_URL:$BUILT_CONVEX_SITE_URL" \
+            --var "NEXT_PUBLIC_SITE_URL:$SITE_URL"
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          check() { # method path expected [json body]
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X "$1" \
+              -H 'content-type: application/json' ${4:+-d "$4"} "$SITE_URL$2" || true)
+            if [ "$code" = "$3" ]; then
+              echo "ok   $1 $2 -> $code"
+            else
+              echo "fail $1 $2 -> $code (want $3)"
+              return 1
+            fi
+          }
+          deadline=$((SECONDS + 60))
+          attempt=1
+          while :; do
+            echo "Attempt $attempt"
+            failed=0
+            check GET /api/health 200 || failed=1
+            check GET /login 200 || failed=1
+            check GET /track 200 || failed=1
+            check GET /manifest.webmanifest 200 || failed=1
+            check POST /api/chat 401 '{}' || failed=1
+            [ "$failed" = 0 ] && break
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error title=Smoke test failed::$SITE_URL did not pass the smoke checks within 60 s. The worker is rolled back automatically; Convex is not. Check 'npx wrangler tail --env production'."
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep 5
+          done
+
+      # Only the worker: a Convex push is not rolled back (docs/ci-cd.md).
+      # Without a version id, wrangler goes back to the previous version.
+      - name: Roll back the worker
+        id: rollback
+        if: failure() && steps.worker.outcome == 'success'
+        run: npx wrangler rollback --env production --message "smoke test failed ${GITHUB_SHA::7}" -y
+
+      - name: Job summary
+        if: always()
+        env:
+          SIZE_MIB: ${{ steps.size.outputs.gzip_mib }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          SIZE_OUTCOME: ${{ steps.size.outcome }}
+          CONVEX_OUTCOME: ${{ steps.convex.outcome }}
+          WORKER_OUTCOME: ${{ steps.worker.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+        run: |
+          {
+            echo "### Sahayak deploy"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Site | ${SITE_URL:-n/a} |"
+            echo "| Commit | \`${GITHUB_SHA}\` (${GITHUB_REF_NAME}) |"
+            echo "| Convex deployment | \`${CONVEX_DEPLOYMENT_TARGET:-n/a}\` |"
+            echo "| Convex URL | ${BUILT_CONVEX_URL:-n/a} |"
+            echo "| Worker build | ${BUILD_OUTCOME:-skipped} |"
+            echo "| Size gate | ${SIZE_OUTCOME:-skipped} (${SIZE_MIB:-?} MiB gzipped, limit ${WORKER_GZIP_LIMIT_MIB} MiB) |"
+            echo "| Convex deploy | ${CONVEX_OUTCOME:-skipped} |"
+            echo "| Worker deploy | ${WORKER_OUTCOME:-skipped} |"
+            echo "| Smoke test | ${SMOKE_OUTCOME:-skipped} |"
+            echo "| Worker rollback | ${ROLLBACK_OUTCOME:-skipped} |"
+            echo ""
+            echo "Rollback and recovery: docs/ci-cd.md#rollback. Convex pushes are not rolled back automatically."
+          } >> "$GITHUB_STEP_SUMMARY"

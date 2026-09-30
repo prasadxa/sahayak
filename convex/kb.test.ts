@@ -1,4 +1,4 @@
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
@@ -10,6 +10,12 @@ const PMFBY_TEXT =
   "Annual commercial and horticultural crops carry a 5% farmer premium.";
 const KCC_TEXT =
   "The Kisan Credit Card gives farmers short-term crop loans with interest subvention for prompt repayment.";
+
+/** listEntries requires sign-in; read it as a plain member. */
+async function listAsMember(t: TestConvex<typeof schema>) {
+  const { client } = await asUser(t, { email: `reader${Math.random()}@example.com` });
+  return await client.query(api.kb.listEntries, {});
+}
 
 /** Simulate the CallMissed embeddings outage (HTTP 502) for every fetch. */
 function embeddingsDown() {
@@ -85,7 +91,7 @@ describe("kb access control", () => {
     await seedChunks(t);
     const { client } = await asUser(t, { email: "clerk@example.com", role: "officer" });
     expect(await client.mutation(api.kb.deleteEntry, { entryId: "entry-kcc" })).toBe(2);
-    const titles = (await t.query(api.kb.listEntries, {})).map((e) => e.title);
+    const titles = (await client.query(api.kb.listEntries, {})).map((e) => e.title);
     expect(titles).toEqual(["PMFBY basics"]);
   });
 
@@ -245,11 +251,18 @@ describe("kb listing, seeding and backfill", () => {
   it("reports pending embeddings per entry", async () => {
     const t = convexTest(schema, modules);
     await seedChunks(t);
-    const entries = await t.query(api.kb.listEntries, {});
+    const entries = await listAsMember(t);
     expect(entries).toEqual([
       expect.objectContaining({ title: "KCC basics", chunks: 2, pendingEmbeddings: 1 }),
       expect.objectContaining({ title: "PMFBY basics", chunks: 1, pendingEmbeddings: 1 }),
     ]);
+  });
+
+  it("lists nothing to a signed-out caller", async () => {
+    const t = convexTest(schema, modules);
+    await seedChunks(t);
+    expect(await t.query(api.kb.listEntries, {})).toEqual([]);
+    expect(await listAsMember(t)).toHaveLength(2);
   });
 
   it("hasTitle reports whether a title exists", async () => {
@@ -407,14 +420,14 @@ describe("kb_sources summary table", () => {
     expect((await sources(t)).map((s) => s.pendingEmbeddings)).toEqual([0, 0]);
     const rows = await t.run((ctx) => ctx.db.query("kb_entries").collect());
     expect(rows.every((r) => r.needsEmbedding === undefined)).toBe(true);
-    const listed = await t.query(api.kb.listEntries, {});
+    const listed = await listAsMember(t);
     expect(listed.map((e) => e.pendingEmbeddings)).toEqual([0, 0]);
   });
 
   it("drives listEntries, hasTitle and the backfill queue (legacy rows are invisible until migrated)", async () => {
     const t = convexTest(schema, modules);
     await insertLegacyChunks(t);
-    expect(await t.query(api.kb.listEntries, {})).toEqual([]);
+    expect(await listAsMember(t)).toEqual([]);
     expect(await t.query(internal.kb.hasTitle, { title: "Legacy A" })).toBe(false);
     expect(await t.query(internal.kb.chunksMissingEmbedding, { limit: 10 })).toEqual([]);
     expect(await t.query(internal.kb.countMissingEmbeddings, {})).toBe(0);
@@ -426,7 +439,7 @@ describe("kb_sources summary table", () => {
     const r = await t.action(internal.kb.migrateSources, {});
     expect(r).toEqual({ sources: 2, chunks: 3, pendingEmbeddings: 2 });
 
-    expect(await t.query(api.kb.listEntries, {})).toEqual([
+    expect(await listAsMember(t)).toEqual([
       expect.objectContaining({ entryId: "legacy-a", title: "Legacy A", chunks: 2, pendingEmbeddings: 1 }),
       expect.objectContaining({
         entryId: "legacy-b", title: "Legacy B", source: "https://pmfby.gov.in/",

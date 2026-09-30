@@ -105,6 +105,27 @@ describe("chat access control", () => {
     ).rejects.toThrow(forbidden);
   });
 
+  it("refuses a vote on a message from another chat, passed with the caller's own chatId", async () => {
+    const { t, alice, mallory } = await setup();
+    await alice.client.mutation(api.chats.voteMessage, { chatId: "chat-public", messageId: "m2", type: "up" });
+    await mallory.client.mutation(api.chats.saveChat, { chatId: "chat-m", title: "mine", visibility: "private" });
+    await expect(
+      mallory.client.mutation(api.chats.voteMessage, { chatId: "chat-m", messageId: "m2", type: "down" })
+    ).rejects.toThrow(/Forbidden/);
+    const votes = await t.run((ctx) => ctx.db.query("votes").collect());
+    expect(votes).toHaveLength(1);
+    expect(votes[0]).toMatchObject({ chatId: "chat-public", messageId: "m2", isUpvoted: true });
+  });
+
+  it("lets the owner vote on, and then flip, a vote on their own message", async () => {
+    const { t, alice } = await setup();
+    await alice.client.mutation(api.chats.voteMessage, { chatId: "chat-private", messageId: "m1", type: "up" });
+    await alice.client.mutation(api.chats.voteMessage, { chatId: "chat-private", messageId: "m1", type: "down" });
+    const votes = await t.run((ctx) => ctx.db.query("votes").collect());
+    expect(votes).toHaveLength(1);
+    expect(votes[0]).toMatchObject({ chatId: "chat-private", messageId: "m1", isUpvoted: false });
+  });
+
   it("lets the owner delete their chat", async () => {
     const { t, alice } = await setup();
     await alice.client.mutation(api.chats.deleteChatById, { id: "chat-private" });

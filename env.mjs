@@ -36,4 +36,11 @@ export const env = createEnv({
     AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID,
     AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET,
   },
+
+  /**
+   * Set SKIP_ENV_VALIDATION=1 to build without secrets (GitHub Actions; see
+   * docs/ci-cd.md). The deployed worker does not set it, so its runtime env
+   * (wrangler vars + secrets) is still validated.
+   */
+  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
 });

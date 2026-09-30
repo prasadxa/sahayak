@@ -75,6 +75,9 @@ describe("analytics.overview", () => {
     expect(o.grievances.total).toBe(2);
     expect(o.grievances.byStatus).toMatchObject({ submitted: 2 });
     expect(o.grievances.byCategory).toMatchObject({ loan_credit: 1, election: 1 });
+    expect(o.grievances.overdue).toBe(0);
+    expect(o.grievances.avgResolutionDays).toBeNull();
+    expect(o.grievances.byDistrict).toEqual({ Unspecified: 2 });
 
     expect(o.kb).toEqual({ entries: 2, chunks: 3, pendingEmbeddings: 1 });
 
@@ -90,7 +93,7 @@ describe("analytics.overview", () => {
       "ancient question",
     ]);
     expect(o.unanswered[0]).toMatchObject({ language: "hi" });
-    expect(Object.keys(o.unanswered[0]).sort()).toEqual(["createdAt", "language", "query"]);
+    expect(Object.keys(o.unanswered[0]).sort()).toEqual(["count", "createdAt", "language", "query"]);
   });
 
   it("reads KB counts from kb_sources, not the chunk rows", async () => {
@@ -123,4 +126,61 @@ describe("analytics.overview", () => {
     expect(o.queries.truncated).toBe(true);
     expect(o.queries.byLanguage).toEqual({ hi: 5000 });
   }, 30_000);
+
+  it("passes grievance SLA and district stats through", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    const created = now - 30 * DAY;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("grievances", {
+        userId: officer.userId, refId: "GRV-0000A001", category: "election",
+        subject: "s", description: "d", status: "submitted", district: " thane ",
+        createdAt: now - 18 * DAY,
+      });
+      await ctx.db.insert("grievances", {
+        userId: officer.userId, refId: "GRV-0000A002", category: "election",
+        subject: "s", description: "d", status: "resolved", district: "Thane",
+        createdAt: created,
+        updates: [
+          { status: "submitted", note: "received", at: created, byName: "Sahayak" },
+          { status: "resolved", note: "done", at: created + 3 * DAY + DAY / 2, byName: "Officer" },
+        ],
+      });
+    });
+    const o = await officer.client.query(api.analytics.overview, {});
+    expect(o.grievances.overdue).toBe(1);
+    expect(o.grievances.avgResolutionDays).toBe(3.5);
+    expect(o.grievances.byDistrict).toEqual({ Thane: 2 });
+  });
+});
+
+describe("analytics.overview unanswered questions", () => {
+  it("groups repeats of the same question into one row with a count", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      for (const [query, ago] of [
+        ["PACS godown subsidy?", 3000],
+        ["  pacs   GODOWN subsidy? ", 2000],
+        ["PACS godown subsidy?", 1000],
+        ["Milk price in dairy society?", 500],
+      ] as const) {
+        await ctx.db.insert("kb_queries", {
+          query,
+          language: "en",
+          hits: 0,
+          mode: "none",
+          createdAt: now - ago,
+        });
+      }
+    });
+    const o = await officer.client.query(api.analytics.overview, {});
+    expect(o.unanswered).toHaveLength(2);
+    const godown = o.unanswered.find((u) => /godown/i.test(u.query));
+    expect(godown?.count).toBe(3);
+    expect(godown?.createdAt).toBe(now - 1000);
+    expect(o.unanswered.find((u) => /milk/i.test(u.query))?.count).toBe(1);
+  });
 });

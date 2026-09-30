@@ -6,12 +6,15 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getRole, requireStaff } from "./roles";
 import { GRIEVANCE_CATEGORIES, GRIEVANCE_STATUSES } from "@/lib/constants";
+import { ageInDays, isOverdue, normalizeDistrict } from "@/lib/grievance-sla";
 
 // Re-exported for older imports; the single source is lib/constants.ts.
 export { GRIEVANCE_CATEGORIES };
 
 const REF_PATTERN = /^GRV-[0-9A-F]{8}$/;
 const LIST_LIMIT = 200;
+const EXPORT_LIMIT = 2000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 type TimelineEntry = NonNullable<Doc<"grievances">["updates"]>[number];
 
@@ -113,26 +116,95 @@ export const listMine = query({
   },
 });
 
-/** Staff console: newest first, at most 200 rows. */
+type GrievanceFilter = { status?: string; category?: string; district?: string };
+
+const filterArgs = {
+  status: v.optional(v.string()),
+  category: v.optional(v.string()),
+  /** Matched after normalizeDistrict on both sides; "Unspecified" = no district. */
+  district: v.optional(v.string()),
+};
+
+/**
+ * Optional caller clock for SLA fields. Convex caches query results until the
+ * rows they read change, so a server-side Date.now() would freeze "overdue"
+ * on a quiet day; clients pass an hour-rounded `now` that ticks forward.
+ */
+const nowArg = { now: v.optional(v.number()) };
+
+
+/** Newest first (by insertion), at most `limit` rows matching the filters. */
+async function findGrievances(
+  ctx: QueryCtx,
+  { status, category, district }: GrievanceFilter,
+  limit: number
+): Promise<Doc<"grievances">[]> {
+  const base = status
+    ? ctx.db
+        .query("grievances")
+        .withIndex("by_status", (q) => q.eq("status", status))
+        .order("desc")
+    : ctx.db.query("grievances").order("desc");
+  const districtKey = district?.trim() ? normalizeDistrict(district) : undefined;
+
+  const rows: Doc<"grievances">[] = [];
+  for await (const g of base) {
+    if (category && g.category !== category) continue;
+    if (districtKey && normalizeDistrict(g.district) !== districtKey) continue;
+    rows.push(g);
+    if (rows.length >= limit) break;
+  }
+  return rows;
+}
+
+/**
+ * Staff console: newest first, at most 200 rows. Each row also carries
+ * `ageDays` and `overdue` (open and older than the 15-day target).
+ */
 export const listAll = query({
-  args: { status: v.optional(v.string()), category: v.optional(v.string()) },
+  args: { ...filterArgs, ...nowArg },
   handler: async (ctx, args) => {
     await requireStaff(ctx);
-    const { status, category } = args;
-    const base = status
-      ? ctx.db
-          .query("grievances")
-          .withIndex("by_status", (q) => q.eq("status", status))
-          .order("desc")
-      : ctx.db.query("grievances").order("desc");
+    const now = args.now ?? Date.now();
+    const rows = await findGrievances(ctx, args, LIST_LIMIT);
+    return rows.map((g) => ({
+      ...g,
+      ageDays: ageInDays(g.createdAt, now),
+      overdue: isOverdue(g, now),
+    }));
+  },
+});
 
-    const rows: Doc<"grievances">[] = [];
-    for await (const g of base) {
-      if (category && g.category !== category) continue;
-      rows.push(g);
-      if (rows.length >= LIST_LIMIT) break;
-    }
-    return rows;
+/**
+ * Flat rows for the officer CSV export (same filters as listAll), newest
+ * first, at most 2000. Missing optional fields are empty strings; `district`
+ * is normalised; `lastUpdate` is the latest timeline note.
+ */
+export const exportRows = query({
+  args: { ...filterArgs, ...nowArg },
+  handler: async (ctx, args) => {
+    await requireStaff(ctx);
+    const now = args.now ?? Date.now();
+    const rows = await findGrievances(ctx, args, EXPORT_LIMIT);
+    return rows.map((g) => {
+      const timeline = timelineOf(g);
+      return {
+        refId: g.refId,
+        createdAt: new Date(g.createdAt).toISOString(),
+        status: g.status,
+        category: g.category,
+        subject: g.subject,
+        description: g.description,
+        contact: g.contact ?? "",
+        district: g.district?.trim() ? normalizeDistrict(g.district) : "",
+        societyName: g.societyName ?? "",
+        channel: g.channel ?? "",
+        language: g.language ?? "",
+        ageDays: ageInDays(g.createdAt, now),
+        overdue: isOverdue(g, now),
+        lastUpdate: timeline[timeline.length - 1]?.note ?? "",
+      };
+    });
   },
 });
 
@@ -205,29 +277,62 @@ export type GrievanceStats = {
   total: number;
   byStatus: Record<string, number>;
   byCategory: Record<string, number>;
+  /** Normalised district → count; missing districts under "Unspecified". */
+  byDistrict: Record<string, number>;
+  /** Open (submitted / in review) grievances older than the 15-day target. */
+  overdue: number;
+  /** Mean days from filing to the latest move into "resolved", 1 decimal; null if none. */
+  avgResolutionDays: number | null;
 };
+
+/** When a resolved grievance last became resolved, from its timeline. */
+function resolvedAt(g: Doc<"grievances">): number | undefined {
+  if (g.status !== "resolved") return undefined;
+  const updates = g.updates ?? [];
+  for (let i = updates.length - 1; i >= 0; i--) {
+    if (updates[i].status === "resolved") return updates[i].at;
+  }
+  return undefined;
+}
 
 /**
  * Counts every grievance. `.collect()` scans the whole table, which is fine
  * at prototype scale; switch to an aggregate component before production.
  */
-export async function grievanceStats(ctx: QueryCtx): Promise<GrievanceStats> {
+export async function grievanceStats(
+  ctx: QueryCtx,
+  now: number = Date.now()
+): Promise<GrievanceStats> {
   const all = await ctx.db.query("grievances").collect();
   const byStatus: Record<string, number> = Object.fromEntries(
     GRIEVANCE_STATUSES.map((s) => [s, 0])
   );
   const byCategory: Record<string, number> = {};
+  const byDistrict: Record<string, number> = {};
+  let overdue = 0;
+  let resolvedCount = 0;
+  let resolutionMs = 0;
   for (const g of all) {
     byStatus[g.status] = (byStatus[g.status] ?? 0) + 1;
     byCategory[g.category] = (byCategory[g.category] ?? 0) + 1;
+    const district = normalizeDistrict(g.district);
+    byDistrict[district] = (byDistrict[district] ?? 0) + 1;
+    if (isOverdue(g, now)) overdue++;
+    const at = resolvedAt(g);
+    if (at !== undefined) {
+      resolvedCount++;
+      resolutionMs += Math.max(0, at - g.createdAt);
+    }
   }
-  return { total: all.length, byStatus, byCategory };
+  const avgResolutionDays =
+    resolvedCount === 0 ? null : Math.round((resolutionMs / resolvedCount / DAY_MS) * 10) / 10;
+  return { total: all.length, byStatus, byCategory, byDistrict, overdue, avgResolutionDays };
 }
 
 export const stats = query({
-  args: {},
-  handler: async (ctx) => {
+  args: nowArg,
+  handler: async (ctx, args) => {
     await requireStaff(ctx);
-    return await grievanceStats(ctx);
+    return await grievanceStats(ctx, args.now ?? Date.now());
   },
 });

@@ -86,10 +86,16 @@ This is the SIH 2026 PS 26088 prototype (Hardware category). Design:
 `docs/superpowers/plans/2026-09-30-sahayak-sih-prototype.md`. Demo:
 `docs/sih-demo-script.md`.
 
-**Convex:** cloud project `sahayak` (team `karan-rajput`), dev deployment
-`whimsical-possum-664`. Convex env has `CALLMISSED_API_KEY`, `SITE_URL`,
-`JWT_PRIVATE_KEY`, `JWKS`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` and
-`ADMIN_EMAILS`. There is no prod deployment yet.
+**Convex:** project `sahayak` (team `karan-rajput`).
+- **dev** `whimsical-possum-664`: local `npx convex dev`, the dev test account and demo data.
+- **prod** `valuable-platypus-774`: for the hosted site. Its env has `CALLMISSED_API_KEY`, `AUTH_GOOGLE_*`, `SITE_URL=https://sahayak.rough-cell-383c.workers.dev` and its own JWT keys. The KB is seeded; there's no demo data yet and no admin yet.
+
+**Hosting:** Cloudflare Workers via OpenNext (account support@freetochat.app).
+- `env.production` is worker `sahayak`, deployed ONLY by `.github/workflows/deploy.yml` on push to `main`.
+- The default env is worker `sahayak-dev`, used by local `npm run cf:deploy`.
+- See `docs/ci-cd.md` and `docs/deploy-cloudflare.md`.
+
+**GitHub:** https://github.com/prasadxa/sahayak (public). CI (`ci.yml`) runs lint, tsc, test and the CF build on PRs and main. The deploy skips with a warning until the production secrets are set (`scripts/setup-github-secrets.sh`).
 
 **Google OAuth:** OAuth client "Sahayak" (Web application) in Google Cloud
 project `gargifarms-a56b0`. Its origin is `http://localhost:3000` and its
@@ -110,5 +116,11 @@ its own origin and redirect URI added.
 **Known gaps / next up:**
 - The CallMissed `/v1/embeddings` endpoint was returning 502 on 2026-09-30, so all 49 seeded chunks are awaiting embedding. Search uses full-text until then. Run `npx convex run kb:backfillEmbeddingsInternal '{}'` when it recovers.
 - The kiosk has not yet been tested on real Pi hardware (GPIO button, printer, audio).
-- There is no prod deployment (Convex prod plus hosting for Next.js). The kiosk QR needs `NEXT_PUBLIC_TRACK_BASE_URL` pointing at a public URL.
+- **Go-live steps the owner must do** (the agent's auto-mode blocks credential and production writes):
+  1. Create a Convex prod deploy key and a Cloudflare API token, then run `scripts/setup-github-secrets.sh`.
+  2. Add `https://valuable-platypus-774.convex.site/api/auth/callback/google` (redirect) and `https://sahayak.rough-cell-383c.workers.dev` (origin) to the Google OAuth client.
+  3. Push to main, or re-run Deploy.
+  4. `npm run seed:demo -- --prod` if you want demo data.
+  5. Sign in with Google and add the email to prod `ADMIN_EMAILS`.
+- The kiosk QR needs `NEXT_PUBLIC_TRACK_BASE_URL` pointing at the public URL.
 - Deferred: CallMissed missed-call/IVR and WhatsApp channels, and offline FAQs on the kiosk.

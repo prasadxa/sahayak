@@ -9,6 +9,8 @@
 //   ---
 // Files whose title already exists are skipped, so re-running is safe.
 // Uses `npx convex run` against the deployment in .env.local (CONVEX_DEPLOYMENT).
+// Pass --prod (`npm run seed:kb -- --prod`) to seed the project's production
+// deployment instead; it is forwarded to every `npx convex run` call.
 // Works while the embeddings API is down: chunks are stored without
 // embeddings and can be embedded later with the Backfill button on /knowledge.
 
@@ -20,6 +22,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const KB_DIR = path.join(ROOT, "data", "kb");
 const CATEGORIES = new Set(["laws", "schemes", "pmfby", "finance", "grievance", "general"]);
+
+const KNOWN_FLAGS = new Set(["--prod"]);
+const cliArgs = process.argv.slice(2);
+const unknown = cliArgs.filter((a) => !KNOWN_FLAGS.has(a));
+if (unknown.length > 0) {
+  console.error(`Unknown argument(s): ${unknown.join(" ")}\nUsage: npm run seed:kb [-- --prod]`);
+  process.exit(2);
+}
+/** Extra flags for `npx convex run` (`--prod` targets the production deployment). */
+const CONVEX_TARGET_FLAGS = cliArgs.includes("--prod") ? ["--prod"] : [];
 
 /** Minimal front-matter parser: `key: value` lines between leading `---` fences. */
 function parseFrontMatter(raw, file) {
@@ -43,7 +55,7 @@ function parseFrontMatter(raw, file) {
 
 /** Run `npx convex run <fn> <json>` and return its stdout (no shell, no quoting issues). */
 function convexRun(fn, args) {
-  return execFileSync("npx", ["convex", "run", fn, JSON.stringify(args)], {
+  return execFileSync("npx", ["convex", "run", ...CONVEX_TARGET_FLAGS, fn, JSON.stringify(args)], {
     cwd: ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -66,6 +78,7 @@ function main() {
   }
 
   const summary = { added: [], skipped: [], failed: [] };
+  if (CONVEX_TARGET_FLAGS.length > 0) console.log("Target: production deployment (--prod)\n");
 
   for (const file of files) {
     let doc;

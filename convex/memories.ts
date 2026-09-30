@@ -14,6 +14,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { getRole } from "./roles";
 
 function generateChunks(input: string): string[] {
   return input
@@ -90,9 +91,9 @@ export const createResource = action({
     let chunkEmbeddings;
     try {
       chunkEmbeddings = await generateEmbeddings(args.content);
-    } catch (error: any) {
+    } catch (error) {
       throw new Error(
-        `Failed to generate embeddings: ${error.message || "Unknown error"}`
+        `Failed to generate embeddings: ${(error as Error)?.message || "Unknown error"}`
       );
     }
 
@@ -104,9 +105,9 @@ export const createResource = action({
           chunks: chunkEmbeddings,
         });
         return `Resource ${resourceId} created and embedded in Convex`;
-      } catch (error: any) {
+      } catch (error) {
         throw new Error(
-          `Failed to save embeddings to database: ${error.message || "Unknown error"}`
+          `Failed to save embeddings to database: ${(error as Error)?.message || "Unknown error"}`
         );
       }
     } else {
@@ -167,6 +168,9 @@ export const listMemories = query({
     if (!userId) {
       throw new Error("User not authenticated");
     }
+    // One kiosk account serves many citizens: never show stored memories,
+    // including rows saved before the account became a kiosk.
+    if ((await getRole(ctx, userId)) === "kiosk") return [];
 
     return await ctx.db
       .query("memories")

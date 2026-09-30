@@ -55,6 +55,24 @@ export const StatusChip = ({ status, className }: { status: string; className?: 
   );
 };
 
+/** Red "Overdue" pill for open grievances past the 15-day target. */
+export const OverdueBadge = ({ className }: { className?: string }) => (
+  <span
+    className={cn(
+      "inline-flex shrink-0 items-center text-xs px-2 py-0.5 rounded-full font-medium bg-red-600 text-white dark:bg-red-500/90",
+      className
+    )}
+  >
+    Overdue
+  </span>
+);
+
+/** "Today", "1 day", "12 days". */
+export function formatAge(days: number): string {
+  if (days <= 0) return "Today";
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
 export type TimelineEntry = { status: string; note: string; at: number; byName: string };
 
 /** Vertical timeline, oldest at the top so it reads like a story. */

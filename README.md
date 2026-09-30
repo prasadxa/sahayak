@@ -95,6 +95,32 @@ The app runs on [localhost:3000](http://localhost:3000/). Sign up with the
 email in `ADMIN_EMAILS` to get the officer dashboard at `/admin`, and assign
 `officer` or `kiosk` roles at `/admin/users`.
 
+## Demo data
+
+For demos, load sample grievances and dashboard history:
+
+```bash
+npm run seed:demo                     # dev deployment (.env.local)
+npm run seed:demo -- --prod           # production deployment
+npm run seed:demo -- --clear          # remove the demo rows (add --prod for production)
+```
+
+This creates a demo citizen (`demo.citizen@sahayak.test`), 24 grievances
+from the last 45 days across Pune, Nashik, Satara, Kolhapur, Solapur and
+Nagpur (Hindi, Marathi and English, with officer timelines and a few overdue
+cases), and about 120 knowledge-base questions in 6 languages over the last 30
+days, some of them unanswered. Seeding is idempotent.
+
+Demo rows are identifiable, and `--clear` deletes only them:
+
+- grievance refs are `GRV-DE000001` to `GRV-DE000018`, owned by the demo user.
+  These refs work on `/track`.
+- `kb_queries` rows have a `createdAt` ending in `123` ms, and their text is
+  one of the questions in `convex/demo.ts`.
+
+Health check: `GET /api/health` returns `{ ok, time, convex, version }`,
+with status 200, or 503 when Convex is unreachable.
+
 ## Raspberry Pi kiosk
 
 See `hardware/pi/README.md` for the parts list (about ₹12–15k), wiring (TALK

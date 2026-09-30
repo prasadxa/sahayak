@@ -19,6 +19,7 @@ chat/
 │   ├── layout.tsx                 root: reads `sahayak-lang` cookie → <html lang>, viewport/PWA meta
 │   ├── convex-client-provider.tsx Convex + Auth + I18nProvider(initialLang)
 │   ├── manifest.ts                PWA manifest
+│   ├── api/health/route.ts        GET health: { ok, time, convex, version } (200/503, no-store)
 │   ├── (auth)/login, register     sign-in (Password + Google)
 │   ├── (chat)/
 │   │   ├── page.tsx, chat/[id]/   chat UI
@@ -49,7 +50,8 @@ chat/
 │   ├── grievances.ts              file, listMine, listAll, updateStatus, track, stats
 │   ├── analytics.ts               overview for /admin
 │   ├── voice.ts                   transcribe (STT), synthesize (TTS)
-│   ├── crons.ts                   hourly TTS audio cleanup
+│   ├── crons.ts                   hourly TTS audio cleanup · every 15 min purge kiosk chats older than 1 h
+│   ├── demo.ts                    INTERNAL demo.seed / demo.clear (judge demo data; refs GRV-DE00xxxx)
 │   ├── auth.ts, auth.config.ts, http.ts, users.ts, chats.ts, messages.ts, memories.ts, …
 │   ├── test.setup.ts, test.helpers.ts, *.test.ts   convex-test (never deployed: multi-dot names)
 │
@@ -66,7 +68,9 @@ chat/
 │       └── tools/                 search-kb, file-grievance, pmfby-premium, web-search, memory, documents
 │
 ├── data/kb/*.md                   curated corpus (front matter: title, category, source)
-├── scripts/seed-kb.mjs            `npm run seed:kb` → internal kb.seedIngest per file
+├── scripts/seed-kb.mjs            `npm run seed:kb [-- --prod]` → internal kb.seedIngest per file
+├── scripts/seed-demo.mjs          `npm run seed:demo [-- --prod] [-- --clear]` → internal demo.seed/clear
+├── .github/workflows/             ci.yml (lint, tsc, test, CF build) · deploy.yml (Convex + Cloudflare on main)
 │
 ├── hardware/pi/                   Raspberry Pi 4 kiosk
 │   ├── README.md                  BOM, wiring, setup, demo checklist
@@ -86,7 +90,7 @@ chat/
 
 | Table | Fields | Indexes | Notes |
 | --- | --- | --- | --- |
-| **users** | name, email, image, emailVerificationTime?, avatarUrl?, avatarStorageId?, isMemoryEnabled?, **role?** (`member\|officer\|admin\|kiosk`) | email, **by_role** | A missing role means member. `ADMIN_EMAILS` grants admin **only for a verified email** (Google sign-in sets emailVerificationTime; Password sign-ups never do) |
+| **users** | name, email, image, emailVerificationTime? (set only when Google reports email_verified), avatarUrl?, avatarStorageId?, isMemoryEnabled?, **role?** (`member\|officer\|admin\|kiosk`) | email, **by_role** | A missing role means member. `ADMIN_EMAILS` grants admin **only for a verified email** (Google sign-in sets emailVerificationTime; Password sign-ups never do) |
 | **chats** | title, visibility (`private\|public`), chatId, userId, isPinned?, **language?** | by_userId, by_chatId | Language is recorded when the chat is created |
 | messages | messageId, chatId, role, parts[], attachments? | by_messageId, by_chatId | |
 | documents | title, content, kind (`text\|code\|image\|sheet`), documentId, userId, chatId? | by_userId, by_documentId, by_chatId | Grievance letters and drafts |
@@ -131,7 +135,7 @@ requireStaff(ctx) / requireAdmin(ctx) / getRole(ctx, userId)   // helpers for qu
 api.kb.searchKnowledgeBase({ query, category?, k?, language? }) → string   // signed-in; query capped at 500 chars
 api.kb.ingestText / ingestUrl / ingestFile                     // staff
 api.kb.deleteEntry({ entryId })                                // staff
-api.kb.listEntries → [{ entryId, title, category, source?, chunks, pendingEmbeddings }]
+api.kb.listEntries → [{ entryId, title, category, source?, chunks, pendingEmbeddings }]   // signed-in ([] otherwise)
 api.kb.backfillEmbeddings → { embedded, remaining }            // staff
 internal.kb.seedIngest({ title, category, source?, content })  // CLI seeder
 internal.kb.migrateSources → { sources, chunks, pendingEmbeddings }  // rebuild kb_sources (idempotent)
@@ -139,14 +143,29 @@ internal.kb.migrateSources → { sources, chunks, pendingEmbeddings }  // rebuil
 // convex/grievances.ts
 api.grievances.file({ category, subject, description, contact?, district?, societyName?, language? }) → { refId }
 api.grievances.listMine → Doc<"grievances">[]
-api.grievances.listAll({ status?, category? })                 // staff
+api.grievances.listAll({ status?, category?, district? })      // staff; ≤200, newest first
+  → (Doc<"grievances"> & { ageDays: number, overdue: boolean })[]  // district matched after normalizeDistrict; "Unspecified" = none
+api.grievances.exportRows({ status?, category?, district? })   // staff; ≤2000, newest first, same filters as listAll
+  → [{ refId, createdAt /*ISO*/, status, category, subject, description, contact, district, societyName,
+       channel, language, ageDays, overdue, lastUpdate /*latest timeline note*/ }]  // missing optionals = ""
 api.grievances.updateStatus({ refId, status, note })           // staff
 api.grievances.track({ refId }) → { refId, category, subject, status, createdAt, updates } | null  // public, no PII
-api.grievances.stats → { byStatus: Record<string, number>, byCategory: Record<string, number>, total }  // staff
+api.grievances.stats → { byStatus: Record<string, number>, byCategory: Record<string, number>, total,
+  byDistrict: Record<string, number>,  // normalised district; missing → "Unspecified"
+  overdue: number,                     // submitted/in_review older than GRIEVANCE_SLA_DAYS
+  avgResolutionDays: number | null }   // createdAt → latest timeline move into "resolved", 1 dp; staff
+
+// lib/grievance-sla.ts (pure; 15 days is a citizen-charter target, not a legal deadline)
+GRIEVANCE_SLA_DAYS = 15 · ageInDays(createdAt, now) (floored, ≥0) · dueDate(createdAt) → ms
+isOverdue({ status, createdAt }, now)   // open status and now − createdAt > 15 days (exactly 15 = on time)
+normalizeDistrict(d?) → trimmed Title Case | "Unspecified"
+
+// lib/csv.ts (pure)
+toCsv(rows, columns: { key, header }[]) → string   // UTF-8 BOM, RFC 4180 quoting, CRLF, formula-injection guard
 
 // convex/analytics.ts
 api.analytics.overview → { grievances: stats, kb: { entries, chunks, pendingEmbeddings },
-  queries: { total, truncated, byLanguage, byCategory, byMode }, unanswered: [{ query, language?, createdAt }] }  // staff
+  queries: { total, truncated, byLanguage, byCategory, byMode }, unanswered: [{ query, language?, createdAt, count }] }  // repeats grouped  // staff
 
 // convex/voice.ts
 api.voice.transcribe({ storageId, language? }) → { text }      // language = short code; sent as BCP-47

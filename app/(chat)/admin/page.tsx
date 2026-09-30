@@ -13,7 +13,9 @@ import { PageHeader, StaffGate } from "@/components/admin/admin-shell";
 import { BarList } from "@/components/admin/bar-list";
 import { humanize } from "@/components/admin/grievance-ui";
 import { KB_CATEGORY_LABELS, type KbCategory } from "@/lib/constants";
+import { GRIEVANCE_SLA_DAYS } from "@/lib/grievance-sla";
 import { LANGUAGES } from "@/lib/languages";
+import { useHourlyNow } from "@/components/admin/use-hourly-now";
 
 function languageName(code: string): string {
   const lang = LANGUAGES.find((l) => l.code === code);
@@ -40,12 +42,13 @@ const Panel = ({ title, children }: { title: string; children: React.ReactNode }
 );
 
 const Dashboard = ({ isAdmin }: { isAdmin: boolean }) => {
-  const o = useQuery(api.analytics.overview);
+  const now = useHourlyNow();
+  const o = useQuery(api.analytics.overview, { now });
 
   if (o === undefined) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3" aria-busy="true">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3" aria-busy="true">
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
           <Skeleton key={i} className="h-20" />
         ))}
       </div>
@@ -59,10 +62,20 @@ const Dashboard = ({ isAdmin }: { isAdmin: boolean }) => {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Tile label="Total grievances" value={g.total} />
         <Tile label="Open" value={open} hint="Submitted + in review" />
+        <Tile
+          label={`Overdue (>${GRIEVANCE_SLA_DAYS} days)`}
+          value={g.overdue}
+          hint={`Open past the ${GRIEVANCE_SLA_DAYS}-day target`}
+        />
         <Tile label="Resolved" value={g.byStatus.resolved ?? 0} />
+        <Tile
+          label="Avg. resolution time"
+          value={g.avgResolutionDays === null ? "—" : `${g.avgResolutionDays} days`}
+          hint="Filing to resolved"
+        />
         <Tile
           label="Knowledge base entries"
           value={o.kb.entries}
@@ -88,9 +101,14 @@ const Dashboard = ({ isAdmin }: { isAdmin: boolean }) => {
         </Panel>
       </div>
 
-      <Panel title="Grievances by category">
-        <BarList data={g.byCategory} label={humanize} empty="No grievances yet" />
-      </Panel>
+      <div className="grid md:grid-cols-2 gap-3">
+        <Panel title="Grievances by category">
+          <BarList data={g.byCategory} label={humanize} empty="No grievances yet" />
+        </Panel>
+        <Panel title="Grievances by district">
+          <BarList data={g.byDistrict} empty="No grievances yet" />
+        </Panel>
+      </div>
 
       <Panel title="Unanswered questions">
         <p className="text-xs text-muted-foreground -mt-2">
@@ -109,14 +127,16 @@ const Dashboard = ({ isAdmin }: { isAdmin: boolean }) => {
               <thead>
                 <tr className="text-left text-xs text-muted-foreground border-b">
                   <th className="py-2 pr-3 font-medium">Question</th>
+                  <th className="py-2 pr-3 font-medium text-right">Asked</th>
                   <th className="py-2 pr-3 font-medium">Language</th>
-                  <th className="py-2 font-medium whitespace-nowrap">When</th>
+                  <th className="py-2 font-medium whitespace-nowrap">Last asked</th>
                 </tr>
               </thead>
               <tbody>
                 {o.unanswered.map((u, i) => (
                   <tr key={`${u.createdAt}-${i}`} className="border-b last:border-0 align-top">
                     <td className="py-2 pr-3 min-w-[12rem]">{u.query}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{u.count}×</td>
                     <td className="py-2 pr-3 whitespace-nowrap">
                       {u.language ? languageName(u.language) : "—"}
                     </td>

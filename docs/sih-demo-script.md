@@ -10,6 +10,8 @@ the Raspberry Pi kiosk and **P2** on a laptop and phone.
 - [ ] The laptop is signed in as an **officer/admin** at `/admin`.
 - [ ] The phone has the Sahayak PWA installed (Chrome → "Install app").
 - [ ] The KB is seeded (`/knowledge` shows 8+ entries).
+- [ ] Demo data is seeded: `npm run seed:demo -- --prod`. `/admin` then shows about 24 grievances (some overdue) and 30 days of questions in 6 languages, including unanswered ones. Safe to re-run; `npm run seed:demo -- --prod --clear` removes only the demo rows afterwards.
+- [ ] `GET /api/health` on the deployed URL returns `{"ok":true,"convex":"ok",…}` with status 200. A 503 means the app can't reach Convex.
 - [ ] The receipt printer has paper (optional).
 - [ ] You've done one warm-up question at the kiosk, so the first real answer isn't a cold start.
 

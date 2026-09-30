@@ -33,6 +33,14 @@ export const getAttachmentUrl = mutation({
   },
 });
 
+const MAX_AI_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Bytes a base64 string decodes to, computed without decoding it. */
+function decodedBase64Size(b64: string): number {
+  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.floor((b64.length * 3) / 4) - padding;
+}
+
 export const storeAiImage = action({
   args: {
     base64Image: v.string(),
@@ -40,6 +48,7 @@ export const storeAiImage = action({
   handler: async (ctx, args) => {
     if (!(await getAuthUserId(ctx))) throw new Error("Not authenticated");
     const base64Data = args.base64Image.replace(/^data:image\/\w+;base64,/, "");
+    if (decodedBase64Size(base64Data) > MAX_AI_IMAGE_BYTES) throw new Error("Image too large");
     const bytes = Base64.toByteArray(base64Data);
     const blob = new Blob([bytes.buffer as ArrayBuffer], { type: "image/png" });
     const storageId = await ctx.storage.store(blob);

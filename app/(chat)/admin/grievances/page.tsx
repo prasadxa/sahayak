@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
-import type { Doc } from "@/convex/_generated/dataModel";
 
 import { toast } from "sonner";
-import { ClipboardList, LoaderCircle } from "lucide-react";
+import { ClipboardList, Download, LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -22,9 +22,67 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NativeSelect, PageHeader, StaffGate } from "@/components/admin/admin-shell";
-import { GrievanceTimeline, StatusChip, humanize } from "@/components/admin/grievance-ui";
+import {
+  GrievanceTimeline,
+  OverdueBadge,
+  StatusChip,
+  formatAge,
+  humanize,
+} from "@/components/admin/grievance-ui";
 import { GRIEVANCE_CATEGORIES, GRIEVANCE_STATUSES } from "@/lib/constants";
+import { toCsv, type CsvColumn } from "@/lib/csv";
+import { GRIEVANCE_SLA_DAYS, UNSPECIFIED_DISTRICT, dueDate } from "@/lib/grievance-sla";
 import { LANGUAGES } from "@/lib/languages";
+import { useHourlyNow } from "@/components/admin/use-hourly-now";
+
+type GrievanceRow = FunctionReturnType<typeof api.grievances.listAll>[number];
+type ExportRow = FunctionReturnType<typeof api.grievances.exportRows>[number];
+
+const EXPORT_LIMIT = 2000;
+
+const EXPORT_COLUMNS: CsvColumn<ExportRow>[] = [
+  { key: "refId", header: "Reference" },
+  { key: "createdAt", header: "Filed (UTC)" },
+  { key: "status", header: "Status" },
+  { key: "category", header: "Category" },
+  { key: "subject", header: "Subject" },
+  { key: "description", header: "Description" },
+  { key: "contact", header: "Contact" },
+  { key: "district", header: "District" },
+  { key: "societyName", header: "Society" },
+  { key: "channel", header: "Channel" },
+  { key: "language", header: "Language" },
+  { key: "ageDays", header: "Age (days)" },
+  { key: "overdue", header: `Overdue (>${GRIEVANCE_SLA_DAYS} days)` },
+  { key: "lastUpdate", header: "Last update" },
+];
+
+/** Local calendar date as YYYY-MM-DD, for the export file name. */
+function isoDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function downloadCsv(csv: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Give the browser a moment to start the download before revoking.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Districts for the filter: alphabetical, "Unspecified" last. */
+function districtOptions(byDistrict: Record<string, number> | undefined): string[] {
+  return Object.keys(byDistrict ?? {}).sort((a, b) => {
+    if (a === UNSPECIFIED_DISTRICT) return 1;
+    if (b === UNSPECIFIED_DISTRICT) return -1;
+    return a.localeCompare(b);
+  });
+}
 
 const Detail = ({ label, value }: { label: string; value?: string }) =>
   value ? (
@@ -38,7 +96,7 @@ const GrievanceDialog = ({
   grievance,
   onClose,
 }: {
-  grievance: Doc<"grievances"> | null;
+  grievance: GrievanceRow | null;
   onClose: () => void;
 }) => {
   const updateStatus = useMutation(api.grievances.updateStatus);
@@ -80,6 +138,7 @@ const GrievanceDialog = ({
           <DialogTitle className="flex flex-wrap items-center gap-2 text-left">
             <span className="font-mono text-sm">{g.refId}</span>
             <StatusChip status={g.status} />
+            {g.overdue && <OverdueBadge />}
           </DialogTitle>
           <DialogDescription className="text-left text-foreground font-medium">
             {g.subject}
@@ -89,6 +148,13 @@ const GrievanceDialog = ({
         <dl className="grid grid-cols-2 gap-3">
           <Detail label="Category" value={humanize(g.category)} />
           <Detail label="Filed" value={new Date(g.createdAt).toLocaleString()} />
+          <Detail
+            label={`Due (${GRIEVANCE_SLA_DAYS}-day target)`}
+            value={
+              new Date(dueDate(g.createdAt)).toLocaleDateString(undefined, { dateStyle: "medium" }) +
+              (g.overdue ? " (overdue)" : "")
+            }
+          />
           <Detail label="Contact" value={g.contact ?? "Not given"} />
           <Detail label="Channel" value={g.channel ? humanize(g.channel) : "Web"} />
           <Detail label="Society" value={g.societyName} />
@@ -144,43 +210,107 @@ const GrievanceDialog = ({
 const Console = () => {
   const [status, setStatus] = useState("");
   const [category, setCategory] = useState("");
+  const [district, setDistrict] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const rows = useQuery(api.grievances.listAll, {
+  const [exporting, setExporting] = useState(false);
+  const convex = useConvex();
+  const filters = {
     status: status || undefined,
     category: category || undefined,
-  });
+    district: district || undefined,
+  };
+  const now = useHourlyNow();
+  const rawRows = useQuery(api.grievances.listAll, { ...filters, now });
+  const stats = useQuery(api.grievances.stats, { now });
+  const districts = districtOptions(stats?.byDistrict);
+  // Overdue first; newest first within each group (the server order).
+  const rows = useMemo(
+    () => rawRows && [...rawRows.filter((g) => g.overdue), ...rawRows.filter((g) => !g.overdue)],
+    [rawRows]
+  );
   // Look the row up from the live list so the dialog reflects updates immediately.
   const selected = rows?.find((g) => g._id === selectedId) ?? null;
 
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      // One-off fetch (not a subscription): up to 2000 full rows.
+      const data = await convex.query(api.grievances.exportRows, { ...filters, now: Date.now() });
+      if (data.length === 0) {
+        toast.error("No grievances match these filters");
+        return;
+      }
+      downloadCsv(toCsv(data, EXPORT_COLUMNS), `grievances-${isoDate(new Date())}.csv`);
+      toast.success(
+        data.length >= EXPORT_LIMIT
+          ? `Exported the newest ${EXPORT_LIMIT}. Narrow the filters for the rest.`
+          : `Exported ${data.length} grievance${data.length === 1 ? "" : "s"}`
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-2 sm:max-w-md">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="f-status">Status</Label>
-          <NativeSelect id="f-status" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All statuses</option>
-            {GRIEVANCE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {humanize(s)}
-              </option>
-            ))}
-          </NativeSelect>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 flex-1 sm:max-w-xl">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="f-status">Status</Label>
+            <NativeSelect
+              id="f-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              {GRIEVANCE_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {humanize(s)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="f-category">Category</Label>
+            <NativeSelect
+              id="f-category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">All categories</option>
+              {GRIEVANCE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {humanize(c)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="f-district">District</Label>
+            <NativeSelect
+              id="f-district"
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+            >
+              <option value="">All districts</option>
+              {districts.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="f-category">Category</Label>
-          <NativeSelect
-            id="f-category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option value="">All categories</option>
-            {GRIEVANCE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {humanize(c)}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
+        <Button variant="outline" onClick={exportCsv} disabled={exporting} className="ml-auto">
+          {exporting ? (
+            <LoaderCircle className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
+          Export CSV
+        </Button>
       </div>
 
       {rows === undefined ? (
@@ -203,6 +333,7 @@ const Console = () => {
                 <th className="py-2 px-3 font-medium hidden sm:table-cell">Category</th>
                 <th className="py-2 px-3 font-medium hidden md:table-cell">Society / district</th>
                 <th className="py-2 px-3 font-medium">Status</th>
+                <th className="py-2 px-3 font-medium whitespace-nowrap">Age</th>
                 <th className="py-2 px-3 font-medium hidden sm:table-cell whitespace-nowrap">
                   Filed
                 </th>
@@ -231,7 +362,19 @@ const Console = () => {
                     {[g.societyName, g.district].filter(Boolean).join(", ") || "—"}
                   </td>
                   <td className="py-2 px-3">
-                    <StatusChip status={g.status} />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StatusChip status={g.status} />
+                      {g.overdue && <OverdueBadge />}
+                    </div>
+                  </td>
+                  <td
+                    className={
+                      g.overdue
+                        ? "py-2 px-3 whitespace-nowrap tabular-nums font-medium text-red-600 dark:text-red-400"
+                        : "py-2 px-3 whitespace-nowrap tabular-nums text-muted-foreground"
+                    }
+                  >
+                    {formatAge(g.ageDays)}
                   </td>
                   <td className="py-2 px-3 hidden sm:table-cell whitespace-nowrap text-muted-foreground">
                     {new Date(g.createdAt).toLocaleDateString()}

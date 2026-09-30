@@ -1,3 +1,4 @@
+import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireStaff } from "./roles";
 import { grievanceStats } from "./grievances";
@@ -24,15 +25,18 @@ function bump(map: Record<string, number>, key: string) {
  * cap was hit. Grievance stats still scan the table (see grievances.ts).
  */
 export const overview = query({
-  args: {},
-  handler: async (ctx) => {
+  // Optional caller clock (see grievances.ts nowArg) so SLA counts and the
+  // 30-day window move forward even when no rows change.
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
     await requireStaff(ctx);
+    const now = args.now ?? Date.now();
 
-    const grievances = await grievanceStats(ctx);
+    const grievances = await grievanceStats(ctx, now);
 
     const totals = await kbTotals(ctx);
 
-    const since = Date.now() - WINDOW_MS;
+    const since = now - WINDOW_MS;
     const scanned = await ctx.db
       .query("kb_queries")
       .withIndex("by_createdAt", (q) => q.gte("createdAt", since))
@@ -52,15 +56,32 @@ export const overview = query({
 
     // Most recent unanswered questions: the knowledge gaps to fill. Look in
     // the rows already read, then (bounded) in older ones.
-    const unanswered: { query: string; language?: string; createdAt: number }[] = [];
+    // Repeats of the same question (case/spacing-insensitive) are one row with
+    // a count, keeping the most recent time; rows arrive newest first.
+    const unanswered: {
+      query: string;
+      language?: string;
+      createdAt: number;
+      count: number;
+    }[] = [];
+    const seen = new Map<string, (typeof unanswered)[number]>();
     const collect = (r: (typeof recent)[number]) => {
-      if (unanswered.length < UNANSWERED_LIMIT && (r.hits === 0 || r.mode === "none")) {
-        unanswered.push({
-          query: r.query,
-          ...(r.language ? { language: r.language } : {}),
-          createdAt: r.createdAt,
-        });
+      if (!(r.hits === 0 || r.mode === "none")) return;
+      const key = r.query.trim().replace(/\s+/g, " ").toLowerCase();
+      const existing = seen.get(key);
+      if (existing) {
+        existing.count += 1;
+        return;
       }
+      if (unanswered.length >= UNANSWERED_LIMIT) return;
+      const row = {
+        query: r.query.trim(),
+        ...(r.language ? { language: r.language } : {}),
+        createdAt: r.createdAt,
+        count: 1,
+      };
+      seen.set(key, row);
+      unanswered.push(row);
     };
     recent.forEach(collect);
     if (unanswered.length < UNANSWERED_LIMIT && !truncated) {

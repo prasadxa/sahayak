@@ -1,10 +1,19 @@
 // Cloudflare Workers config for the Sahayak Next.js app (OpenNext adapter).
-// See docs/deploy-cloudflare.md. Convex stays on Convex cloud; only Next.js
-// runs here. account_id is intentionally not set: wrangler uses the logged-in
-// account (or CLOUDFLARE_ACCOUNT_ID).
+// See docs/deploy-cloudflare.md and docs/ci-cd.md. Convex stays on Convex
+// cloud; only Next.js runs here. account_id is intentionally not set: wrangler
+// uses the logged-in account (or CLOUDFLARE_ACCOUNT_ID).
+//
+// Two workers:
+//   default (top level)  -> "sahayak-dev"  local `npm run cf:deploy`
+//   env.production       -> "sahayak"      GitHub Actions only (deploy.yml,
+//                                           `opennextjs-cloudflare deploy --env production`)
+//
+// Wrangler environments do NOT inherit `vars` or bindings such as `services`,
+// so each env repeats them. Top-level keys like main, compatibility_*, assets
+// and observability are inherited.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "sahayak",
+  "name": "sahayak-dev",
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -14,23 +23,46 @@
   },
   "services": [
     {
-      // Self-reference binding used by OpenNext (must match "name").
-      // See https://opennext.js.org/cloudflare/caching
+      // Self-reference binding used by OpenNext. It must name this env's
+      // worker. See https://opennext.js.org/cloudflare/caching
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "sahayak"
+      "service": "sahayak-dev"
     }
   ],
-  // Non-secret runtime vars. NEXT_PUBLIC_* are also inlined at build time
-  // (see the cf:build script in package.json); keep both in sync.
-  // Secrets (CALLMISSED_API_KEY) are set with `wrangler secret put`, and
-  // locally in .dev.vars.
+  // Non-secret runtime vars for the dev worker (dev Convex). NEXT_PUBLIC_* are
+  // also inlined at build time (see the cf:build script in package.json), so
+  // keep NEXT_PUBLIC_SITE_URL in sync with its fallback there.
+  // Secrets (CALLMISSED_API_KEY) are set per worker with `wrangler secret put`
+  // (add `--env production` for the prod worker), and locally in .dev.vars.
   "vars": {
     "CONVEX_DEPLOYMENT": "dev:whimsical-possum-664",
     "NEXT_PUBLIC_CONVEX_URL": "https://whimsical-possum-664.convex.cloud",
     "NEXT_PUBLIC_CONVEX_SITE_URL": "https://whimsical-possum-664.convex.site",
-    "NEXT_PUBLIC_SITE_URL": "https://sahayak.rough-cell-383c.workers.dev"
+    "NEXT_PUBLIC_SITE_URL": "https://sahayak-dev.rough-cell-383c.workers.dev"
   },
   "observability": {
     "enabled": true
+  },
+  "env": {
+    "production": {
+      // An explicit name is used as is (no "-production" suffix).
+      "name": "sahayak",
+      "services": [
+        {
+          "binding": "WORKER_SELF_REFERENCE",
+          "service": "sahayak"
+        }
+      ],
+      // The Convex vars are empty on purpose: they depend on the deployment
+      // CONVEX_DEPLOY_KEY points at, and deploy.yml overrides all four with
+      // `--var`. A deploy without those flags fails the runtime env check
+      // (env.mjs) instead of silently pointing prod at dev Convex.
+      "vars": {
+        "CONVEX_DEPLOYMENT": "",
+        "NEXT_PUBLIC_CONVEX_URL": "",
+        "NEXT_PUBLIC_CONVEX_SITE_URL": "",
+        "NEXT_PUBLIC_SITE_URL": "https://sahayak.rough-cell-383c.workers.dev"
+      }
+    }
   }
 }

@@ -18,6 +18,31 @@ export function passwordProfile(params: Record<string, unknown>) {
   return { email, name, image: "" };
 }
 
+/**
+ * Maps Google's OIDC claims to a `users` row and passes Google's
+ * `email_verified` claim through as `emailVerified`.
+ *
+ * Why: @convex-dev/auth 0.0.80 (`defaultCreateOrUpdateUser`) computes
+ * `emailVerified = profile.emailVerified ?? (provider is oauth/oidc)`, so
+ * without this every Google sign-in gets `emailVerificationTime`, and the
+ * default Google profile drops the claim. Only an explicit `false` stops that
+ * (and also stops linking to an existing verified user by email). The flag is
+ * stripped before the users row is written, so it needs no schema field.
+ * `roleOfUser` grants ADMIN_EMAILS admin only when emailVerificationTime is set.
+ */
+export function googleProfile(p: Record<string, unknown>) {
+  const email = typeof p.email === "string" ? p.email.toLowerCase() : undefined;
+  const name =
+    typeof p.name === "string" && p.name ? p.name : (typeof p.email === "string" ? p.email : "").split("@")[0];
+  return {
+    id: String(p.sub),
+    name,
+    email,
+    image: typeof p.picture === "string" ? p.picture : "",
+    emailVerified: p.email_verified === true,
+  };
+}
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [Password({ profile: passwordProfile }), Google],
+  providers: [Password({ profile: passwordProfile }), Google({ profile: googleProfile })],
 });
