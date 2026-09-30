@@ -20,7 +20,7 @@ chat, embeddings, STT, TTS and web search from one `cm_` API key.
 - **Frontend:** Next.js 15 (App Router, `--turbo`), React 19, Tailwind 3, shadcn/Radix
 - **Backend:** Convex (DB, file storage, vector search, actions), Convex Auth (Password + optional Google)
 - **AI:** Vercel AI SDK v4 (`ai`, `@ai-sdk/react`) with `@ai-sdk/openai` pointed at CallMissed
-- **Package manager:** npm (`package-lock.json`). `bun.lock` is inherited from upstream and stale.
+- **Package manager:** npm (`package-lock.json`). (Do not add a `bun.lock`: OpenNext picks its package manager from lockfiles.)
 
 ## Commands
 
