@@ -1,9 +1,17 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
 import { asUser } from "./test.helpers";
+
+/** searchKnowledgeBase consumes a rate-limit bucket — register the component. */
+function testConvex() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t);
+  return t;
+}
 
 const PMFBY_TEXT =
   "Under PMFBY the farmer premium is 2% of the sum insured for kharif crops and 1.5% for rabi crops. " +
@@ -71,7 +79,7 @@ describe("kb access control", () => {
   });
 
   it("forbids a member from deleting an entry", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(client.mutation(api.kb.deleteEntry, { entryId: "entry-pmfby" })).rejects.toThrow(
@@ -80,14 +88,14 @@ describe("kb access control", () => {
   });
 
   it("requires sign-in to delete an entry", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await expect(t.mutation(api.kb.deleteEntry, { entryId: "entry-pmfby" })).rejects.toThrow(
       /Not authenticated/
     );
   });
 
   it("lets an officer delete an entry", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const { client } = await asUser(t, { email: "clerk@example.com", role: "officer" });
     expect(await client.mutation(api.kb.deleteEntry, { entryId: "entry-kcc" })).toBe(2);
@@ -96,7 +104,7 @@ describe("kb access control", () => {
   });
 
   it("forbids a member from ingesting text, before any network call", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const fetchMock = embeddingsDown();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(
@@ -106,7 +114,7 @@ describe("kb access control", () => {
   });
 
   it("rejects a signed-out ingestText call", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     await expect(
       t.action(api.kb.ingestText, { title: "x", category: "general", content: KCC_TEXT })
@@ -114,7 +122,7 @@ describe("kb access control", () => {
   });
 
   it("forbids a member from ingesting a URL without fetching it", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const fetchMock = embeddingsDown();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(
@@ -124,7 +132,7 @@ describe("kb access control", () => {
   });
 
   it("forbids a member from running the embeddings backfill", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(client.action(api.kb.backfillEmbeddings, {})).rejects.toThrow(/Forbidden/);
   });
@@ -138,7 +146,7 @@ describe("ingestUrl SSRF guard", () => {
   it.each(["http://127.0.0.1", "http://169.254.169.254/latest/meta-data/", "file:///etc/passwd"])(
     "rejects %s before fetching",
     async (url) => {
-      const t = convexTest(schema, modules);
+      const t = testConvex();
       const fetchMock = embeddingsDown();
       const { client } = await asUser(t, { email: "clerk@example.com", role: "officer" });
       await expect(client.action(api.kb.ingestUrl, { url, category: "general" })).rejects.toThrow(
@@ -149,7 +157,7 @@ describe("ingestUrl SSRF guard", () => {
   );
 
   it("refuses to follow a redirect to an internal address", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const fetchMock = vi.fn(
       async () =>
         new Response(null, {
@@ -172,7 +180,7 @@ describe("kb with the embeddings API down", () => {
   });
 
   it("stores chunks without embeddings instead of failing ingestion", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     const { client } = await asUser(t, { email: "clerk@example.com", role: "officer" });
     const result = await client.action(api.kb.ingestText, {
@@ -188,7 +196,7 @@ describe("kb with the embeddings API down", () => {
   }, 20_000);
 
   it("finds un-embedded chunks by keyword through the internal full-text query", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const hits = await t.query(internal.kb.textSearch, { query: "rabi premium", limit: 5 });
     expect(hits.map((h) => h.title)).toContain("PMFBY basics");
@@ -203,7 +211,7 @@ describe("kb with the embeddings API down", () => {
   });
 
   it("falls back to full-text search and logs the query in text mode", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     embeddingsDown();
     const { client } = await asUser(t, { email: "farmer@example.com" });
@@ -221,7 +229,7 @@ describe("kb with the embeddings API down", () => {
   });
 
   it("returns the not-found message and logs mode none when nothing matches", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     embeddingsDown();
     const { client } = await asUser(t, { email: "farmer@example.com" });
@@ -232,7 +240,7 @@ describe("kb with the embeddings API down", () => {
   });
 
   it("truncates logged queries to 500 characters", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.mutation(internal.kb.logQuery, {
       query: "a".repeat(900),
       hits: 0,
@@ -249,7 +257,7 @@ describe("kb listing, seeding and backfill", () => {
   });
 
   it("reports pending embeddings per entry", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const entries = await listAsMember(t);
     expect(entries).toEqual([
@@ -259,21 +267,21 @@ describe("kb listing, seeding and backfill", () => {
   });
 
   it("lists nothing to a signed-out caller", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     expect(await t.query(api.kb.listEntries, {})).toEqual([]);
     expect(await listAsMember(t)).toHaveLength(2);
   });
 
   it("hasTitle reports whether a title exists", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     expect(await t.query(internal.kb.hasTitle, { title: "PMFBY basics" })).toBe(true);
     expect(await t.query(internal.kb.hasTitle, { title: "Nope" })).toBe(false);
   });
 
   it("seedIngest ingests without auth even when embeddings are down", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     const r = await t.action(internal.kb.seedIngest, {
       title: "PMFBY basics",
@@ -286,7 +294,7 @@ describe("kb listing, seeding and backfill", () => {
   }, 20_000);
 
   it("seedIngest rejects an unknown category", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     await expect(
       t.action(internal.kb.seedIngest, { title: "x", category: "misc", content: PMFBY_TEXT })
@@ -294,7 +302,7 @@ describe("kb listing, seeding and backfill", () => {
   });
 
   it("backfills missing embeddings in batches and reports what remains", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.mutation(internal.kb.insertChunks, {
       entryId: "big",
       title: "Big",
@@ -315,7 +323,7 @@ describe("kb listing, seeding and backfill", () => {
   });
 
   it("lets an officer run the backfill", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     embeddingsUp();
     const { client } = await asUser(t, { email: "clerk@example.com", role: "officer" });
@@ -336,7 +344,7 @@ describe("admin via ADMIN_EMAILS", () => {
   });
 
   it("lets an ADMIN_EMAILS admin ingest text", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     const { client } = await asUser(t, { email: "boss@example.com", verified: true });
     const r = await client.action(api.kb.ingestText, {
@@ -386,7 +394,7 @@ describe("kb_sources summary table", () => {
   });
 
   it("is written by insertChunks, and un-embedded chunks are flagged needsEmbedding", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     expect(await sources(t)).toEqual([
       expect.objectContaining({ entryId: "entry-kcc", title: "KCC basics", category: "finance", chunks: 2, pendingEmbeddings: 1 }),
@@ -402,7 +410,7 @@ describe("kb_sources summary table", () => {
   });
 
   it("is removed by deleteEntry", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const { client } = await asUser(t, { email: "clerk@example.com", role: "officer" });
     await client.mutation(api.kb.deleteEntry, { entryId: "entry-kcc" });
@@ -410,7 +418,7 @@ describe("kb_sources summary table", () => {
   });
 
   it("is decremented by the embeddings backfill, which also clears needsEmbedding", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     embeddingsUp();
     expect(await t.action(internal.kb.backfillEmbeddingsInternal, {})).toEqual({
@@ -425,7 +433,7 @@ describe("kb_sources summary table", () => {
   });
 
   it("drives listEntries, hasTitle and the backfill queue (legacy rows are invisible until migrated)", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await insertLegacyChunks(t);
     expect(await listAsMember(t)).toEqual([]);
     expect(await t.query(internal.kb.hasTitle, { title: "Legacy A" })).toBe(false);
@@ -434,7 +442,7 @@ describe("kb_sources summary table", () => {
   });
 
   it("migrateSources backfills kb_sources and needsEmbedding from existing chunks", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await insertLegacyChunks(t);
     const r = await t.action(internal.kb.migrateSources, {});
     expect(r).toEqual({ sources: 2, chunks: 3, pendingEmbeddings: 2 });
@@ -453,7 +461,7 @@ describe("kb_sources summary table", () => {
   });
 
   it("migrateSources is idempotent", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await insertLegacyChunks(t);
     await seedChunks(t); // already has kb_sources rows
     const first = await t.action(internal.kb.migrateSources, {});
@@ -476,7 +484,7 @@ describe("searchKnowledgeBase access and limits", () => {
   });
 
   it("rejects an anonymous search before any embedding call or log write", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const fetchMock = embeddingsUp();
     await expect(
@@ -487,7 +495,7 @@ describe("searchKnowledgeBase access and limits", () => {
   });
 
   it("caps the query at 500 characters before embedding it", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await seedChunks(t);
     const fetchMock = embeddingsUp();
     const { client } = await asUser(t, { email: "farmer@example.com" });
@@ -500,7 +508,7 @@ describe("searchKnowledgeBase access and limits", () => {
   });
 
   it("merges full-text hits for un-embedded chunks with good vector hits", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.mutation(internal.kb.insertChunks, {
       entryId: "kcc", title: "KCC basics", category: "finance",
       chunks: [{ content: KCC_TEXT, embedding: Array<number>(1536).fill(0.01) }],
@@ -561,7 +569,7 @@ describe("ingestUrl body limits", () => {
   });
 
   it("stops reading a page larger than 5 MB", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     let pulls = 0;
     const mb = new Uint8Array(1024 * 1024).fill(97);
     vi.stubGlobal(
@@ -588,7 +596,7 @@ describe("ingestUrl body limits", () => {
 
   it("times out a body that drips forever", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -627,7 +635,7 @@ describe("ingestFile storage cleanup", () => {
   });
 
   it("deletes the uploaded file after a successful ingestion", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     const storageId = await t.run((ctx) =>
       ctx.storage.store(new Blob([KCC_TEXT], { type: "text/plain" }))
@@ -641,7 +649,7 @@ describe("ingestFile storage cleanup", () => {
   }, 20_000);
 
   it("keeps the file when ingestion fails", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     embeddingsDown();
     const storageId = await t.run((ctx) =>
       ctx.storage.store(new Blob([KCC_TEXT], { type: "text/plain" }))

@@ -21,6 +21,7 @@ import type * as http from "../http.js";
 import type * as kb from "../kb.js";
 import type * as memories from "../memories.js";
 import type * as messages from "../messages.js";
+import type * as ratelimits from "../ratelimits.js";
 import type * as roles from "../roles.js";
 import type * as streams from "../streams.js";
 import type * as suggestions from "../suggestions.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   kb: typeof kb;
   memories: typeof memories;
   messages: typeof messages;
+  ratelimits: typeof ratelimits;
   roles: typeof roles;
   streams: typeof streams;
   suggestions: typeof suggestions;
@@ -80,4 +82,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+};

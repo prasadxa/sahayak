@@ -28,6 +28,7 @@
     "@codemirror/theme-one-dark": "^6.1.2",
     "@codemirror/view": "^6.36.7",
     "@convex-dev/auth": "^0.0.80",
+    "@convex-dev/rate-limiter": "^0.4.0",
     "@radix-ui/react-alert-dialog": "^1.1.13",
     "@radix-ui/react-avatar": "^1.1.9",
     "@radix-ui/react-dialog": "^1.1.13",

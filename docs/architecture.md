@@ -52,6 +52,8 @@ chat/
 │   ├── voice.ts                   transcribe (STT), synthesize (TTS)
 │   ├── crons.ts                   hourly TTS audio cleanup · every 15 min purge kiosk chats older than 1 h
 │   ├── demo.ts                    INTERNAL demo.seed / demo.clear (judge demo data; refs GRV-DE00xxxx)
+│   ├── convex.config.ts           installs the @convex-dev/rate-limiter component
+│   ├── ratelimits.ts              per-user token buckets (chat/voice/kbSearch + wider *Kiosk variants); consumeChatMessage for the route
 │   ├── auth.ts, auth.config.ts, http.ts, users.ts, chats.ts, messages.ts, memories.ts, …
 │   ├── test.setup.ts, test.helpers.ts, *.test.ts   convex-test (never deployed: multi-dot names)
 │
@@ -170,6 +172,10 @@ api.analytics.overview → { grievances: stats, kb: { entries, chunks, pendingEm
 // convex/voice.ts
 api.voice.transcribe({ storageId, language? }) → { text }      // language = short code; sent as BCP-47
 api.voice.synthesize({ text, language? }) → { url }
+
+// convex/ratelimits.ts — buckets keyed by userId; *Kiosk names for shared kiosk accounts.
+// Empty bucket → action throws "Rate limit exceeded"; the chat route returns 429 + Retry-After.
+api.ratelimits.consumeChatMessage() → { ok, retryAfter }       // signed-in; consumed per POST /api/chat
 
 // lib/ai/tools factories (server): all take the caller's Convex token
 searchKnowledgeBase(language, token) · fileGrievance(token, language)
