@@ -124,3 +124,5 @@ its own origin and redirect URI added.
   5. Sign in with Google and add the email to prod `ADMIN_EMAILS`.
 - The kiosk QR needs `NEXT_PUBLIC_TRACK_BASE_URL` pointing at the public URL.
 - Deferred: CallMissed missed-call/IVR and WhatsApp channels, and offline FAQs on the kiosk.
+
+> Current state and handoff notes: `docs/HANDOFF.md`.
