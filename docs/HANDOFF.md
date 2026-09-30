@@ -140,7 +140,7 @@ A Convex push is **not** rolled back. `ci.yml` runs on PRs and on pushes to `mai
 - **Hardware:** the kiosk has **not been tested on real Pi hardware** (GPIO button, thermal printer, mic and speaker). Push-to-talk with a real microphone is untested in automation.
 - ~~**Production is empty**~~ Prod is seeded (24 demo grievances, 120 query rows) and has accounts: `kiosk@sahayak.in` (kiosk), `member@sahayak.in` (member), `officer@sahayak.in` (officer, granted via `grantRole` — a Password account; for a real officer prefer a Google sign-in + `/admin/users`). Passwords were communicated to the owner; rotate before the event if needed.
 - **URL guard:** it is lexical only. DNS rebinding isn't covered; the risk is accepted because ingest is staff-only.
-- **Rate limits:** there are none on chat, TTS or search.
+- ~~**Rate limits:** there are none on chat, TTS or search.~~ Done (2026-10-01): `@convex-dev/rate-limiter` token buckets per user — chat 20/min, voice (STT+TTS) 20/min, KB search 40/min; kiosk accounts get wider `*Kiosk` buckets (60/60/120) since one login serves a whole queue. Chat route → 429 + `Retry-After`; voice/kb actions throw a retry-after error. Config in `convex/ratelimits.ts`; tests register the component via `@convex-dev/rate-limiter/test`.
 - **Scale:** some admin queries scan whole tables (fine at prototype scale), and `exportRows` could hit Convex read limits with many long descriptions.
 - **Git history:** commit author emails are prasadxa's personal Gmail.
 - **Licence:** there is no LICENSE file; upstream has none either.
@@ -154,7 +154,7 @@ A Convex push is **not** rolled back. `ci.yml` runs on PRs and on pushes to `mai
    - Set `KIOSK_URL`/`NEXT_PUBLIC_TRACK_BASE_URL=https://sahayak.rough-cell-383c.workers.dev`.
    - Test the GPIO button, audio and printer, and fix whatever the hardware reveals.
 3. **Embeddings:** backfill when CallMissed recovers. Consider a fallback embedding provider.
-4. **Rate limiting:** `@convex-dev/rate-limiter` on chat, TTS and search for signed-in users.
+4. ~~**Rate limiting**~~ Done (2026-10-01) — see §7.
 5. **Channels (optional):** CallMissed missed-call/IVR and a WhatsApp bot on the same KB and grievance tools, which strengthens "mobile integration" for feature phones. It costs credits; get the owner's approval.
 6. **Offline kiosk fallback:** cached FAQ answers per language when the network is down.
 7. **Upgrade** Next.js to 15.5+ and `@opennextjs/cloudflare` to latest, then recheck the bundle size.

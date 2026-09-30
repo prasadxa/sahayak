@@ -87,6 +87,16 @@ export async function POST(request: Request) {
     });
   }
 
+  // Per-user token bucket (wider for kiosk accounts); consume before any
+  // model work. Buckets refill continuously — this only bites a script.
+  const chatRate = await fetchMutation(api.ratelimits.consumeChatMessage, {}, { token });
+  if (!chatRate.ok) {
+    return new Response("Too many messages — please wait a moment and try again.", {
+      status: 429,
+      headers: { "Retry-After": String(Math.ceil(chatRate.retryAfter / 1000)) },
+    });
+  }
+
   const language = (await cookies()).get(LANGUAGE_COOKIE)?.value ?? DEFAULT_LANGUAGE;
   const me = await fetchQuery(api.roles.me, {}, { token }).catch(() => null);
   const role = me?.role ?? "member";

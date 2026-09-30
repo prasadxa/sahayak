@@ -19,6 +19,7 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireStaff } from "./roles";
+import { assertWithinLimit } from "./ratelimits";
 
 export type { KbCategory };
 
@@ -587,6 +588,12 @@ export const searchKnowledgeBase = action({
   handler: async (ctx, args): Promise<string> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertWithinLimit(
+      ctx,
+      "kbSearch",
+      await ctx.runQuery(internal.roles.roleOf, { userId }),
+      userId
+    );
 
     const query = args.query.slice(0, MAX_QUERY_CHARS);
     const limit = Math.min(Math.max(Math.floor(args.k ?? 6), 1), 16);

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { assertWithinLimit } from "./ratelimits";
 import { CALLMISSED_MODELS, callmissedFetch } from "@/lib/callmissed";
 import { toBcp47 } from "@/lib/languages";
 
@@ -27,6 +28,12 @@ export const transcribe = action({
   handler: async (ctx, args): Promise<{ text: string }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertWithinLimit(
+      ctx,
+      "voice",
+      await ctx.runQuery(internal.roles.roleOf, { userId }),
+      userId
+    );
 
     const meta: { contentType: string | null } | null = await ctx.runQuery(
       internal.voice.fileMeta,
@@ -86,6 +93,12 @@ export const synthesize = action({
   handler: async (ctx, args): Promise<{ url: string | null }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    await assertWithinLimit(
+      ctx,
+      "voice",
+      await ctx.runQuery(internal.roles.roleOf, { userId }),
+      userId
+    );
 
     const bcp47 = args.language ? toBcp47(args.language) : undefined;
     const res = await callmissedFetch("/audio/speech", {

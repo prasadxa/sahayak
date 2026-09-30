@@ -1,9 +1,17 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { modules } from "./test.setup";
 import { asUser } from "./test.helpers";
+
+/** transcribe/synthesize consume a rate-limit bucket — register the component. */
+function testConvex() {
+  const t = convexTest(schema, modules);
+  registerRateLimiter(t);
+  return t;
+}
 
 type Captured = { url: string; body: unknown };
 
@@ -58,7 +66,7 @@ describe("voice", () => {
   });
 
   it("synthesize sends language and target_language_code as BCP-47 and records the clip", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
 
     const { url } = await client.action(api.voice.synthesize, {
@@ -77,7 +85,7 @@ describe("voice", () => {
   });
 
   it("synthesize omits the language fields when no language is given", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
 
     await client.action(api.voice.synthesize, { text: "Hello" });
@@ -88,14 +96,14 @@ describe("voice", () => {
   });
 
   it("synthesize requires sign-in", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await expect(t.action(api.voice.synthesize, { text: "x" })).rejects.toThrow(
       /Not authenticated/
     );
   });
 
   it("transcribe sends BCP-47 language and deletes the uploaded clip", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     const storageId = await storeFile(t, new Uint8Array([9]), "audio/webm;codecs=opus");
 
@@ -112,7 +120,7 @@ describe("voice", () => {
   });
 
   it("transcribe omits the language for English so STT auto-detects", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     const storageId = await storeFile(t, new Uint8Array([9]), "audio/webm;codecs=opus");
 
@@ -123,7 +131,7 @@ describe("voice", () => {
   });
 
   it("transcribe refuses a non-audio file without transcribing or deleting it", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     // e.g. someone else's avatar or a KB upload
     const storageId = await storeFile(t, new Uint8Array([137, 80, 78, 71]), "image/png");
@@ -136,7 +144,7 @@ describe("voice", () => {
   });
 
   it("transcribe refuses a file with no recorded content type", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     const storageId = await storeFile(t, "plain bytes");
 
@@ -148,7 +156,7 @@ describe("voice", () => {
   });
 
   it("transcribe requires sign-in", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const storageId = await storeFile(t, new Uint8Array([9]), "audio/webm");
     await expect(t.action(api.voice.transcribe, { storageId })).rejects.toThrow(
       /Not authenticated/
@@ -159,7 +167,7 @@ describe("voice", () => {
 
 describe("tts audio cleanup", () => {
   it("deletes clips older than 6 hours along with their files, keeping recent ones", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const now = Date.now();
     const [oldId, newId] = await t.run(async (ctx) => {
       const oldStorage = await ctx.storage.store(new Blob(["old"]));
@@ -187,7 +195,7 @@ describe("tts audio cleanup", () => {
   it("works in batches of 100 and reschedules itself for the rest", async () => {
     vi.useFakeTimers();
     try {
-      const t = convexTest(schema, modules);
+      const t = testConvex();
       const old = Date.now() - 7 * 60 * 60 * 1000;
       await t.run(async (ctx) => {
         for (let i = 0; i < 130; i++) {

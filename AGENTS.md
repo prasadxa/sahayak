@@ -116,6 +116,7 @@ its own origin and redirect URI added.
 **Known gaps / next up:**
 - The CallMissed `/v1/embeddings` endpoint was returning 502 on 2026-09-30, so all 49 seeded chunks are awaiting embedding. Search uses full-text until then. Run `npx convex run kb:backfillEmbeddingsInternal '{}'` when it recovers.
 - The kiosk has not yet been tested on real Pi hardware (GPIO button, printer, audio).
+- Rate limiting is in place (`@convex-dev/rate-limiter`, `convex/ratelimits.ts`): per-user token buckets on chat (20/min), voice (20/min) and KB search (40/min); kiosk-role accounts get wider buckets. Convex tests must `register(t)` from `@convex-dev/rate-limiter/test` when a function under test consumes a bucket.
 - **Go-live steps the owner must do** (the agent's auto-mode blocks credential and production writes):
   1. Create a Convex prod deploy key and a Cloudflare API token, then run `scripts/setup-github-secrets.sh`.
   2. Add `https://valuable-platypus-774.convex.site/api/auth/callback/google` (redirect) and `https://sahayak.rough-cell-383c.workers.dev` (origin) to the Google OAuth client.
