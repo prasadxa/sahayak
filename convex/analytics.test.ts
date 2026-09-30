@@ -77,7 +77,7 @@ describe("analytics.overview", () => {
     expect(o.grievances.byCategory).toMatchObject({ loan_credit: 1, election: 1 });
     expect(o.grievances.overdue).toBe(0);
     expect(o.grievances.avgResolutionDays).toBeNull();
-    expect(o.grievances.byDistrict).toEqual({ Unspecified: 2 });
+    expect(o.grievances.byDistrict).toEqual([{ district: "Unspecified", count: 2 }]);
 
     expect(o.kb).toEqual({ entries: 2, chunks: 3, pendingEmbeddings: 1 });
 
@@ -151,7 +151,7 @@ describe("analytics.overview", () => {
     const o = await officer.client.query(api.analytics.overview, {});
     expect(o.grievances.overdue).toBe(1);
     expect(o.grievances.avgResolutionDays).toBe(3.5);
-    expect(o.grievances.byDistrict).toEqual({ Thane: 2 });
+    expect(o.grievances.byDistrict).toEqual([{ district: "Thane", count: 2 }]);
   });
 });
 

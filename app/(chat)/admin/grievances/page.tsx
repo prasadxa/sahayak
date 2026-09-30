@@ -76,12 +76,16 @@ function downloadCsv(csv: string, filename: string) {
 }
 
 /** Districts for the filter: alphabetical, "Unspecified" last. */
-function districtOptions(byDistrict: Record<string, number> | undefined): string[] {
-  return Object.keys(byDistrict ?? {}).sort((a, b) => {
-    if (a === UNSPECIFIED_DISTRICT) return 1;
-    if (b === UNSPECIFIED_DISTRICT) return -1;
-    return a.localeCompare(b);
-  });
+function districtOptions(
+  byDistrict: { district: string; count: number }[] | undefined
+): string[] {
+  return (byDistrict ?? [])
+    .map((d) => d.district)
+    .sort((a, b) => {
+      if (a === UNSPECIFIED_DISTRICT) return 1;
+      if (b === UNSPECIFIED_DISTRICT) return -1;
+      return a.localeCompare(b);
+    });
 }
 
 const Detail = ({ label, value }: { label: string; value?: string }) =>
