@@ -88,6 +88,19 @@ export default async function RootLayout({
     <html lang={lang} suppressHydrationWarning>
       <ConvexAuthNextjsServerProvider>
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+          {/*
+            OpenNext's esbuild pass wraps functions with `__name(...)` (keepNames)
+            inside the bundled server code. next-themes injects its inline script
+            via `fn.toString()`, so the serialized body carries that call into the
+            browser, where `__name` is undefined and the script dies. Defining the
+            helper first keeps any serialized keepNames output working.
+          */}
+          <script
+            dangerouslySetInnerHTML={{
+              __html:
+                "var __name=function(f,n){try{Object.defineProperty(f,'name',{value:n,configurable:!0})}catch(e){}return f}",
+            }}
+          />
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

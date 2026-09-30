@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { LoaderCircle } from "lucide-react";
@@ -19,6 +20,7 @@ interface UserAuthFormProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const UserAuthForm = ({ className, type, ...props }: UserAuthFormProps) => {
   const { signIn } = useAuthActions();
+  const router = useRouter();
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -41,12 +43,25 @@ export const UserAuthForm = ({ className, type, ...props }: UserAuthFormProps) =
     setError(null);
     try {
       setIsPasswordLoading(true);
-      await signIn("password", {
+      // `redirectTo` only applies to OAuth/magic-link flows; for the Password
+      // provider we navigate ourselves once tokens are issued. `signingIn` is
+      // false when credentials are rejected (no exception is thrown).
+      const result = await signIn("password", {
         email,
         password,
         flow: type === "login" ? "signIn" : "signUp",
         redirectTo: "/",
       });
+      if (result?.signingIn) {
+        router.push("/");
+        router.refresh();
+        return;
+      }
+      setError(
+        type === "login"
+          ? "Invalid email or password"
+          : "Could not create account — try a different email or a stronger password"
+      );
     } catch {
       setError(
         type === "login"
