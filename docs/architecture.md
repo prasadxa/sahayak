@@ -151,7 +151,7 @@ api.grievances.exportRows({ status?, category?, district? })   // staff; ≤2000
 api.grievances.updateStatus({ refId, status, note })           // staff
 api.grievances.track({ refId }) → { refId, category, subject, status, createdAt, updates } | null  // public, no PII
 api.grievances.stats → { byStatus: Record<string, number>, byCategory: Record<string, number>, total,
-  byDistrict: Record<string, number>,  // normalised district; missing → "Unspecified"
+  byDistrict: { district: string, count: number }[],  // list (count desc): Convex keys must be ASCII, districts arrive in native script; normalised, missing → "Unspecified"
   overdue: number,                     // submitted/in_review older than GRIEVANCE_SLA_DAYS
   avgResolutionDays: number | null }   // createdAt → latest timeline move into "resolved", 1 dp; staff
 

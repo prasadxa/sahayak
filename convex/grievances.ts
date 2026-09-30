@@ -277,8 +277,12 @@ export type GrievanceStats = {
   total: number;
   byStatus: Record<string, number>;
   byCategory: Record<string, number>;
-  /** Normalised district → count; missing districts under "Unspecified". */
-  byDistrict: Record<string, number>;
+  /**
+   * Normalised district → count as a LIST, most common first (ties: name).
+   * Convex object keys must be non-control ASCII, and districts arrive in
+   * native script ("पुणे"), so this cannot be a Record keyed by district.
+   */
+  byDistrict: { district: string; count: number }[];
   /** Open (submitted / in review) grievances older than the 15-day target. */
   overdue: number;
   /** Mean days from filing to the latest move into "resolved", 1 decimal; null if none. */
@@ -308,7 +312,7 @@ export async function grievanceStats(
     GRIEVANCE_STATUSES.map((s) => [s, 0])
   );
   const byCategory: Record<string, number> = {};
-  const byDistrict: Record<string, number> = {};
+  const districtCounts = new Map<string, number>();
   let overdue = 0;
   let resolvedCount = 0;
   let resolutionMs = 0;
@@ -316,7 +320,7 @@ export async function grievanceStats(
     byStatus[g.status] = (byStatus[g.status] ?? 0) + 1;
     byCategory[g.category] = (byCategory[g.category] ?? 0) + 1;
     const district = normalizeDistrict(g.district);
-    byDistrict[district] = (byDistrict[district] ?? 0) + 1;
+    districtCounts.set(district, (districtCounts.get(district) ?? 0) + 1);
     if (isOverdue(g, now)) overdue++;
     const at = resolvedAt(g);
     if (at !== undefined) {
@@ -326,6 +330,9 @@ export async function grievanceStats(
   }
   const avgResolutionDays =
     resolvedCount === 0 ? null : Math.round((resolutionMs / resolvedCount / DAY_MS) * 10) / 10;
+  const byDistrict = [...districtCounts]
+    .map(([district, count]) => ({ district, count }))
+    .sort((a, b) => b.count - a.count || a.district.localeCompare(b.district));
   return { total: all.length, byStatus, byCategory, byDistrict, overdue, avgResolutionDays };
 }
 

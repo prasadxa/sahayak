@@ -106,7 +106,10 @@ const Dashboard = ({ isAdmin }: { isAdmin: boolean }) => {
           <BarList data={g.byCategory} label={humanize} empty="No grievances yet" />
         </Panel>
         <Panel title="Grievances by district">
-          <BarList data={g.byDistrict} empty="No grievances yet" />
+          <BarList
+            data={Object.fromEntries(g.byDistrict.map((d) => [d.district, d.count]))}
+            empty="No grievances yet"
+          />
         </Panel>
       </div>
 

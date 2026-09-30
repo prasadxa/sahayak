@@ -372,14 +372,36 @@ describe("grievances SLA, districts and resolution time", () => {
     expect(s.overdue).toBe(1);
     // (4 + 10) / 2: the latest transition into resolved counts.
     expect(s.avgResolutionDays).toBe(7);
-    expect(s.byDistrict).toEqual({ Nashik: 2, Pune: 1, Unspecified: 3 });
+    expect(s.byDistrict).toEqual([
+      { district: "Unspecified", count: 3 },
+      { district: "Nashik", count: 2 },
+      { district: "Pune", count: 1 },
+    ]);
+  });
+
+  it("stats survives non-ASCII district names", async () => {
+    // Convex object keys must be non-control ASCII, so byDistrict is a list
+    // of {district, count} — native-script districts like पुणे are values.
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    await seedGrievances(t, [
+      { refId: "GRV-00000031", district: "पुणे", createdAt: now - 1000 },
+      { refId: "GRV-00000032", district: "नाशिक", createdAt: now - 2000 },
+      { refId: "GRV-00000033", district: "पुणे", createdAt: now - 3000 },
+    ]);
+    const s = await officer.client.query(api.grievances.stats, {});
+    expect(s.byDistrict).toEqual([
+      { district: "पुणे", count: 2 },
+      { district: "नाशिक", count: 1 },
+    ]);
   });
 
   it("stats returns null average resolution when nothing is resolved", async () => {
     const t = convexTest(schema, modules);
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const s = await officer.client.query(api.grievances.stats, {});
-    expect(s).toMatchObject({ total: 0, overdue: 0, avgResolutionDays: null, byDistrict: {} });
+    expect(s).toMatchObject({ total: 0, overdue: 0, avgResolutionDays: null, byDistrict: [] });
   });
 });
 
