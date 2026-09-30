@@ -98,7 +98,7 @@ It works by text or voice, on phones, laptops and a PACS-office kiosk.
 ```bash
 npm install
 npm run dev                  # next dev --turbo + convex dev (dev deployment)
-npm test                     # vitest (292 tests); convex-test for convex/*.test.ts
+npm test                     # vitest (297 tests); convex-test for convex/*.test.ts
 npx tsc --noEmit             # also: npx tsc --noEmit -p convex
 npm run lint
 npm run build                # plain Next build (shares .next with the dev server: stop dev first)
@@ -107,6 +107,8 @@ npm run seed:kb [-- --prod]
 npm run seed:demo [-- --prod] [-- --clear]
 npx convex dev --once        # push functions/schema to dev
 ```
+
+**Live-site rehearsal scripts** (NOT committed — they contain demo passwords): `~/sahayak-e2e/*.mjs` — `officer-update.mjs` (officer sets in_review → citizen /track live-updates), `ratelimit-429.mjs` (429 proof, no LLM cost), `kiosk-voice.mjs` (kiosk PTT→STT→answer with a fake-mic WAV; regenerate it with a CallMissed TTS call), plus login/register/grievance variants.
 
 **Deploying production.** Push to `main`, or GitHub → Actions → Deploy → Run workflow. `deploy.yml` then does, in order:
 1. lint, tsc and tests
@@ -148,6 +150,8 @@ A Convex push is **not** rolled back. `ci.yml` runs on PRs and on pushes to `mai
 - **Branding:** `package.json` version is still 0.5.0 from upstream.
 
 ## 8. Suggested next work (in priority order)
+
+**Stopped here (2026-09-30).** Live = `main` `ea5a8de` + docs commits; all software arcs of the demo verified on prod (§7, §8.1). PRs merged: auth/theme fixes, district-stats ASCII fix, rate limiting, docs. Next session starts at **Pi bring-up** (item 2), then re-check CallMissed STT/embeddings and pre-event ops (rotate demo passwords; optional `seed:demo -- --prod --clear` + reseed for a clean slate).
 
 1. ~~**Demo readiness**~~ Done (2026-09-30): prod seeded, accounts created, full demo rehearsed on the live site with Playwright — login → Hindi → PMFBY card ₹750 → grievance `GRV-…` → `/track` → officer console → officer sets *in review* → citizen `/track` updates live; kiosk account → `/kiosk` redirect + मराठी grid + welcome TTS + PTT→STT pipeline (STT itself was down at CallMissed — see §7). Prod bugs found and fixed: password sign-in never navigated (redirectTo is OAuth-only), `__name is not defined` crashed the inline theme script on every page, and a native-script district name crashed `grievanceStats` (`byDistrict` is now a list, not a Record). Remaining unrehearsed: physical mic/audio/printer on the Pi (task 3).
 2. **Pi bring-up:**

@@ -88,22 +88,22 @@ This is the SIH 2026 PS 26088 prototype (Hardware category). Design:
 
 **Convex:** project `sahayak` (team `karan-rajput`).
 - **dev** `whimsical-possum-664`: local `npx convex dev`, the dev test account and demo data.
-- **prod** `valuable-platypus-774`: for the hosted site. Its env has `CALLMISSED_API_KEY`, `AUTH_GOOGLE_*`, `SITE_URL=https://sahayak.rough-cell-383c.workers.dev` and its own JWT keys. The KB is seeded; there's no demo data yet and no admin yet.
+- **prod** `valuable-platypus-774`: serves the live site. Its env has `CALLMISSED_API_KEY`, `AUTH_GOOGLE_*`, `SITE_URL=https://sahayak.rough-cell-383c.workers.dev` and its own JWT keys. KB seeded (8 sources / 49 chunks, embeddings pending) + demo data seeded (24 grievances, ~120 query rows). Accounts: admin via Google sign-in + `ADMIN_EMAILS`, and Password accounts `kiosk/member/officer@sahayak.in` (roles granted via `grantRole`; rotate passwords before the event).
 
 **Hosting:** Cloudflare Workers via OpenNext (account support@freetochat.app).
 - `env.production` is worker `sahayak`, deployed ONLY by `.github/workflows/deploy.yml` on push to `main`.
 - The default env is worker `sahayak-dev`, used by local `npm run cf:deploy`.
 - See `docs/ci-cd.md` and `docs/deploy-cloudflare.md`.
 
-**GitHub:** https://github.com/prasadxa/sahayak (public). CI (`ci.yml`) runs lint, tsc, test and the CF build on PRs and main. The deploy skips with a warning until the production secrets are set (`scripts/setup-github-secrets.sh`).
+**GitHub:** https://github.com/prasadxa/sahayak (public). CI (`ci.yml`) runs lint, tsc, test and the CF build on PRs and main. Production secrets are set; `deploy.yml` deploys Convex + the worker on every push to `main` with a smoke test and worker rollback.
 
 **Google OAuth:** OAuth client "Sahayak" (Web application) in Google Cloud
-project `gargifarms-a56b0`. Its origin is `http://localhost:3000` and its
-redirect URI is
-`https://whimsical-possum-664.convex.site/api/auth/callback/google`. Prod needs
-its own origin and redirect URI added.
+project `gargifarms-a56b0`. Origins: `http://localhost:3000` and
+`https://sahayak.rough-cell-383c.workers.dev`. Redirect URIs: the dev and prod
+`*.convex.site/api/auth/callback/google` endpoints. Prod Google sign-in is
+verified working (the admin account uses it).
 
-**Built (branch `feat/sih-prototype`, uncommitted):**
+**Built (all on `main`, deployed):**
 - **Chat:** CallMissed LLMs with KB-first answers and a PMFBY premium tool, replying in the selected language and native script.
 - **Voice:** STT/TTS with the selected language.
 - **UI:** in 11 languages.
@@ -114,15 +114,10 @@ its own origin and redirect URI added.
 - **PWA and access:** PWA manifest and icons, and route protection in `middleware.ts`.
 
 **Known gaps / next up:**
-- The CallMissed `/v1/embeddings` endpoint was returning 502 on 2026-09-30, so all 49 seeded chunks are awaiting embedding. Search uses full-text until then. Run `npx convex run kb:backfillEmbeddingsInternal '{}'` when it recovers.
+- The CallMissed `/v1/embeddings` endpoint was returning 502 on 2026-09-30, so all 49 seeded chunks are awaiting embedding. Search uses full-text until then. Run `npx convex run kb:backfillEmbeddingsInternal '{}'` when it recovers. `/v1/audio/transcriptions` (STT) also 502'd that evening — check STT health before the voice demo; the kiosk degrades gracefully ("didn't catch that" → retry).
 - The kiosk has not yet been tested on real Pi hardware (GPIO button, printer, audio).
 - Rate limiting is in place (`@convex-dev/rate-limiter`, `convex/ratelimits.ts`): per-user token buckets on chat (20/min), voice (20/min) and KB search (40/min); kiosk-role accounts get wider buckets. Convex tests must `register(t)` from `@convex-dev/rate-limiter/test` when a function under test consumes a bucket.
-- **Go-live steps the owner must do** (the agent's auto-mode blocks credential and production writes):
-  1. Create a Convex prod deploy key and a Cloudflare API token, then run `scripts/setup-github-secrets.sh`.
-  2. Add `https://valuable-platypus-774.convex.site/api/auth/callback/google` (redirect) and `https://sahayak.rough-cell-383c.workers.dev` (origin) to the Google OAuth client.
-  3. Push to main, or re-run Deploy.
-  4. `npm run seed:demo -- --prod` if you want demo data.
-  5. Sign in with Google and add the email to prod `ADMIN_EMAILS`.
+- ~~**Go-live steps**~~ Done (2026-09-30): deploy secrets set, prod OAuth configured, prod seeded, admin active.
 - The kiosk QR needs `NEXT_PUBLIC_TRACK_BASE_URL` pointing at the public URL.
 - Deferred: CallMissed missed-call/IVR and WhatsApp channels, and offline FAQs on the kiosk.
 
