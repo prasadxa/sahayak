@@ -40,6 +40,10 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-// Lets `next dev` see Cloudflare bindings from wrangler.jsonc (no-op outside
-// dev). See https://opennext.js.org/cloudflare/get-started
-initOpenNextCloudflareForDev();
+// Lets `next dev` see Cloudflare bindings from wrangler.jsonc. Only in dev:
+// during `next build` every build worker loads this file, and each starting
+// its own workerd on the same local state fails with SQLITE_BUSY.
+// See https://opennext.js.org/cloudflare/get-started
+if (process.env.NODE_ENV === "development") {
+  initOpenNextCloudflareForDev();
+}
