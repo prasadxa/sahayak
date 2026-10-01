@@ -118,7 +118,7 @@ verified working (the admin account uses it).
 **Known gaps / next up:**
 - The CallMissed `/v1/embeddings` endpoint was returning 502 on 2026-09-30, so all 49 seeded chunks are awaiting embedding. Search uses full-text until then. Run `npx convex run kb:backfillEmbeddingsInternal '{}'` when it recovers. `/v1/audio/transcriptions` (STT) also 502'd that evening — check STT health before the voice demo; the kiosk degrades gracefully ("didn't catch that" → retry).
 - The kiosk has not yet been tested on real Pi hardware (GPIO button, printer, audio).
-- Rate limiting is in place (`@convex-dev/rate-limiter`, `convex/ratelimits.ts`): per-user token buckets on chat (20/min), voice (20/min) and KB search (40/min); kiosk-role accounts get wider buckets. Convex tests must `register(t)` from `@convex-dev/rate-limiter/test` when a function under test consumes a bucket.
+- Rate limiting is in place (`@convex-dev/rate-limiter`, `convex/ratelimits.ts`): per-user token buckets on chat (20/min), voice (20/min), KB search (40/min), grievance filing (10/min), storage URLs (30/min) and votes (60/min); kiosk-role accounts get wider buckets. Convex tests that call a rate-limited function must build their harness with `testConvex()` from `convex/test.setup.ts`, which registers the component.
 - ~~**Go-live steps**~~ Done (2026-09-30): deploy secrets set, prod OAuth configured, prod seeded, admin active.
 - The kiosk QR needs `NEXT_PUBLIC_TRACK_BASE_URL` pointing at the public URL.
 - Deferred: CallMissed missed-call/IVR and WhatsApp channels, and offline FAQs on the kiosk.

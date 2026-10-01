@@ -1,17 +1,8 @@
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
-
-/** transcribe/synthesize consume a rate-limit bucket — register the component. */
-function testConvex() {
-  const t = convexTest(schema, modules);
-  registerRateLimiter(t);
-  return t;
-}
 
 type Captured = { url: string; body: unknown };
 
@@ -39,7 +30,7 @@ function mockCallmissed(captured: Captured[]) {
  * Store a file with `contentType` in its system metadata, as the real upload
  * endpoint records it from the Content-Type header (convex-test doesn't).
  */
-async function storeFile(t: ReturnType<typeof convexTest>, body: BlobPart, contentType?: string) {
+async function storeFile(t: ReturnType<typeof testConvex>, body: BlobPart, contentType?: string) {
   const storageId = await t.run((ctx) => ctx.storage.store(new Blob([body], { type: contentType })));
   if (contentType) {
     await t.run(async (ctx) => {
@@ -102,6 +93,16 @@ describe("voice", () => {
     );
   });
 
+  it("synthesize rejects an unsupported language without calling CallMissed", async () => {
+    const t = testConvex();
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+
+    await expect(
+      client.action(api.voice.synthesize, { text: "Hello", language: "xx" })
+    ).rejects.toThrow(/Unsupported language "xx"/);
+    expect(captured.filter((c) => c.url.endsWith("/audio/speech"))).toHaveLength(0);
+  });
+
   it("transcribe sends BCP-47 language and deletes the uploaded clip", async () => {
     const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
@@ -128,6 +129,19 @@ describe("voice", () => {
 
     const form = captured[0]?.body as FormData;
     expect(form.get("language")).toBeNull();
+  });
+
+  it("transcribe rejects an unsupported language without calling CallMissed", async () => {
+    const t = testConvex();
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+    const storageId = await storeFile(t, new Uint8Array([9]), "audio/webm;codecs=opus");
+
+    await expect(
+      client.action(api.voice.transcribe, { storageId, language: "xx" })
+    ).rejects.toThrow(/Unsupported language "xx"/);
+    expect(captured.filter((c) => c.url.endsWith("/audio/transcriptions"))).toHaveLength(0);
+    // The language check throws before the clip is touched or deleted.
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).not.toBeNull();
   });
 
   it("transcribe refuses a non-audio file without transcribing or deleting it", async () => {

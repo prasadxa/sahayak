@@ -278,12 +278,13 @@ export async function POST(request: Request) {
       result.mergeIntoDataStream(dataStream, { sendReasoning: true });
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      // The message may contain an upstream provider's response body; log
+      // the error name only and return a generic string to the client.
       console.error(
         "[api/chat] Stream error:",
         error instanceof Error ? error.name : "unknown error"
       );
-      return `Oops, an error occurred during streaming: ${errorMessage}`;
+      return "Sorry, something went wrong while answering. Please try again.";
     },
   });
 

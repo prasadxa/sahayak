@@ -4,6 +4,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { myProvider } from "@/lib/ai/models";
 import { isStaffRole, KB_CATEGORIES, type KbCategory, type Role } from "@/lib/constants";
+import { LANGUAGES } from "@/lib/languages";
 import { chunkText } from "@/lib/kb/chunk";
 import { assertPublicHttpUrl } from "@/lib/kb/url-guard";
 
@@ -597,7 +598,17 @@ export const searchKnowledgeBase = action({
 
     const query = args.query.slice(0, MAX_QUERY_CHARS);
     const limit = Math.min(Math.max(Math.floor(args.k ?? 6), 1), 16);
-    const category = args.category || undefined;
+    // Out-of-catalog values are dropped rather than applied: an invalid
+    // category would silently filter to zero hits, and `language` lands in
+    // the query log's analytics columns verbatim.
+    const category =
+      args.category && (KB_CATEGORIES as readonly string[]).includes(args.category)
+        ? args.category
+        : undefined;
+    const language =
+      args.language && LANGUAGES.some((l) => l.code === args.language)
+        ? args.language
+        : undefined;
 
     let vectorDocs: Doc<"kb_entries">[] = [];
     let textDocs: Doc<"kb_entries">[] = [];
@@ -642,7 +653,7 @@ export const searchKnowledgeBase = action({
     await ctx.runMutation(internal.kb.logQuery, {
       query,
       category,
-      language: args.language,
+      language,
       hits: docs.length,
       topScore,
       mode,

@@ -3,13 +3,16 @@ import { mutation, action, query } from "./_generated/server";
 import { v, Base64 } from "convex/values";
 
 import { requireUserId } from "./access";
+import { getRole } from "./roles";
+import { assertWithinLimit } from "./ratelimits";
 
 export const generateAttachmentUrl = mutation({
   args: {
     contentType: v.string(),
   },
   handler: async (ctx) => {
-    await requireUserId(ctx);
+    const userId = await requireUserId(ctx);
+    await assertWithinLimit(ctx, "storageUpload", await getRole(ctx, userId), userId);
     return await ctx.storage.generateUploadUrl();
   },
 });

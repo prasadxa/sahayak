@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assertWithinLimit } from "./ratelimits";
 import { callmissedFetch } from "@/lib/callmissed";
-import { toBcp47 } from "@/lib/languages";
+import { LANGUAGES, toBcp47 } from "@/lib/languages";
 
 /** Generated read-aloud clips older than this are deleted by the hourly cron. */
 export const TTS_AUDIO_TTL_MS = 6 * 60 * 60 * 1000;
@@ -29,6 +29,9 @@ export const transcribe = action({
   handler: async (ctx, args): Promise<{ text: string }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    if (args.language && !LANGUAGES.some((l) => l.code === args.language)) {
+      throw new Error(`Unsupported language "${args.language}".`);
+    }
     await assertWithinLimit(
       ctx,
       "voice",
@@ -101,6 +104,9 @@ export const synthesize = action({
   handler: async (ctx, args): Promise<{ url: string | null }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
+    if (args.language && !LANGUAGES.some((l) => l.code === args.language)) {
+      throw new Error(`Unsupported language "${args.language}".`);
+    }
     await assertWithinLimit(
       ctx,
       "voice",

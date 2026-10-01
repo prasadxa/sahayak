@@ -1,8 +1,8 @@
-import { convexTest, type TestConvex } from "convex-test";
+import type { TestConvex } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
 import { GRIEVANCE_CATEGORIES } from "@/lib/constants";
 
@@ -18,7 +18,7 @@ const allUsers = (t: T) => t.run((ctx) => ctx.db.query("users").collect());
 
 describe("demo.seed", () => {
   it("creates the demo user, grievances and queries; a second seed adds nothing", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
 
     const first = await t.mutation(internal.demo.seed, {});
     expect(first.userCreated).toBe(true);
@@ -42,7 +42,7 @@ describe("demo.seed", () => {
   });
 
   it("produces varied, identifiable, realistic rows", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const before = Date.now();
     await t.mutation(internal.demo.seed, {});
     const grievances = await allGrievances(t);
@@ -95,7 +95,7 @@ describe("demo.seed", () => {
   });
 
   it("leaves at least 3 open grievances older than 15 days (overdue)", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.mutation(internal.demo.seed, {});
     const cutoff = Date.now() - 15 * DAY_MS;
     const overdue = (await allGrievances(t)).filter(
@@ -107,7 +107,7 @@ describe("demo.seed", () => {
 
 describe("demo.seed on a real account", () => {
   it("refuses to seed onto a demo-email user someone registered (has an authAccounts row)", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", { name: "Someone", email: DEMO_EMAIL, image: "" });
       await ctx.db.insert("authAccounts", {
@@ -125,7 +125,7 @@ describe("demo.seed on a real account", () => {
   });
 
   it("clear still works (and keeps the account) when the demo email is a real account", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", { name: "Someone", email: DEMO_EMAIL, image: "" });
       await ctx.db.insert("authAccounts", {
@@ -141,7 +141,7 @@ describe("demo.seed on a real account", () => {
 
 describe("demo refs and grievances.track", () => {
   it("track works for a demo ref", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.mutation(internal.demo.seed, {});
     const [g] = await allGrievances(t);
     const tracked = await t.query(api.grievances.track, { refId: g.refId.toLowerCase() });
@@ -153,7 +153,7 @@ describe("demo refs and grievances.track", () => {
 
 describe("demo.clear", () => {
   it("removes only demo rows", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const farmer = await asUser(t, { email: "farmer@example.com" });
     const { refId: realRef } = await farmer.client.mutation(api.grievances.file, {
       category: "loan_credit",
@@ -199,7 +199,7 @@ describe("demo.clear", () => {
   });
 
   it("keeps a real grievance whose random ref happens to use the demo prefix", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await t.mutation(internal.demo.seed, {});
     const farmer = await asUser(t, { email: "farmer@example.com" });
     await t.run((ctx) =>

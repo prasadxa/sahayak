@@ -1,8 +1,8 @@
-import { convexTest, type TestConvex } from "convex-test";
+import type { TestConvex } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
 import crons from "./crons";
 
@@ -12,7 +12,7 @@ describe("kiosk account isolation", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("never lists earlier citizens' chats in the kiosk account's history", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
     await kiosk.client.mutation(api.chats.saveChat, {
       chatId: "citizen-a",
@@ -23,7 +23,7 @@ describe("kiosk account isolation", () => {
   });
 
   it("never lists kiosk-filed grievances on the kiosk account's My grievances page", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
     await kiosk.client.mutation(api.grievances.file, {
       category: "loan_credit",
@@ -35,7 +35,7 @@ describe("kiosk account isolation", () => {
   });
 
   it("refuses to store personal memories for a kiosk account, before any embedding call", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
@@ -49,7 +49,7 @@ describe("kiosk account isolation", () => {
   });
 
   it("refuses to recall memories for a kiosk account", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
@@ -59,14 +59,14 @@ describe("kiosk account isolation", () => {
   });
 
   it("still lists a normal member's own chats", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     await member.client.mutation(api.chats.saveChat, { chatId: "c1", title: "t", visibility: "private" });
     expect((await member.client.query(api.chats.listChats, { paginationOpts: page })).page).toHaveLength(1);
   });
 
   it("returns no memories to a kiosk account, even rows stored before it became a kiosk", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
     await t.run((ctx) =>
       ctx.db.insert("memories", {
@@ -83,7 +83,7 @@ describe("kiosk account isolation", () => {
   });
 
   it("still lists a normal member's own memories", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     await t.run((ctx) =>
       ctx.db.insert("memories", {
@@ -131,7 +131,7 @@ describe("chats.purgeKioskChats", () => {
   it("purges a kiosk chat older than an hour with its messages, votes, documents and streams", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const start = Date.now();
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
     const member = await asUser(t, { email: "farmer@example.com" });
     await chatWithChildren(kiosk.client, "kiosk-old");
@@ -167,7 +167,7 @@ describe("chats.purgeKioskChats", () => {
   it("deletes 50 chats per run and reschedules itself while more remain", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const start = Date.now();
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
     await t.run(async (ctx) => {
       for (let i = 0; i < 52; i++) {

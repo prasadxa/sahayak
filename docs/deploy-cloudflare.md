@@ -24,7 +24,7 @@ the one-time Convex prod setup.
 - Run `npm install`. It installs `@opennextjs/cloudflare` and `wrangler` as devDependencies.
 - Run `npx wrangler login` and check with `npx wrangler whoami` that the right account is active. If you have more than one account, set `CLOUDFLARE_ACCOUNT_ID`. `wrangler.jsonc` has no `account_id`.
 - Fill in `.env.local`. `next build` reads it at build time, and `env.mjs` validates `CONVEX_DEPLOYMENT`, `CALLMISSED_API_KEY`, `NEXT_PUBLIC_CONVEX_URL` and `NEXT_PUBLIC_SITE_URL`. CI skips that check with `SKIP_ENV_VALIDATION=1`, but the deployed worker still validates its runtime env.
-- Bundle size: the worker is about **3.0 MiB gzipped**, measured with `wrangler deploy --dry-run`. That is right at the Workers Free limit of 3 MiB. The Paid plan allows 10 MiB. If a deploy fails with a size error, switch the account to Workers Paid or cut server dependencies.
+- Bundle size: the worker is about **2.93 MiB gzipped**, measured with `wrangler deploy --dry-run`. That is very close to the Workers Free limit of 3 MiB. The Paid plan allows 10 MiB. If a deploy fails with a size error, switch the account to Workers Paid or cut server dependencies.
 
 ## How the build works
 
