@@ -23,6 +23,7 @@ import type * as memories from "../memories.js";
 import type * as messages from "../messages.js";
 import type * as ratelimits from "../ratelimits.js";
 import type * as roles from "../roles.js";
+import type * as settings from "../settings.js";
 import type * as streams from "../streams.js";
 import type * as suggestions from "../suggestions.js";
 import type * as users from "../users.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   ratelimits: typeof ratelimits;
   roles: typeof roles;
+  settings: typeof settings;
   streams: typeof streams;
   suggestions: typeof suggestions;
   users: typeof users;

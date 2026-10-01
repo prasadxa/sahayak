@@ -30,7 +30,8 @@ chat/
 │   │   └── admin/                 staff only
 │   │       ├── page.tsx           dashboard: stats, languages, unanswered questions
 │   │       ├── grievances/page.tsx grievance console (filter, update status)
-│   │       └── users/page.tsx     role management (admin)
+│   │       ├── users/page.tsx     role management (admin)
+│   │       └── models/page.tsx    "Models & voice" provider/model picker (admin)
 │   ├── track/page.tsx             PUBLIC grievance tracking by ref ID
 │   └── kiosk/                     Raspberry Pi kiosk (kiosk-role account)
 │       ├── layout.tsx             full-screen shell
@@ -54,6 +55,7 @@ chat/
 │   ├── demo.ts                    INTERNAL demo.seed / demo.clear (judge demo data; refs GRV-DE00xxxx)
 │   ├── convex.config.ts           installs the @convex-dev/rate-limiter component
 │   ├── ratelimits.ts              per-user token buckets (chat/voice/kbSearch + wider *Kiosk variants); consumeChatMessage for the route
+│   ├── settings.ts                app_settings: admin-set provider/model per function (modelFor/effectiveModel/listModels/setModel/resetModel)
 │   ├── auth.ts, auth.config.ts, http.ts, users.ts, chats.ts, messages.ts, memories.ts, …
 │   ├── test.setup.ts, test.helpers.ts, *.test.ts   convex-test (never deployed: multi-dot names)
 │
@@ -61,7 +63,8 @@ chat/
 │   ├── constants.ts               KB/grievance categories, statuses, roles (single source)
 │   ├── languages.ts               23 languages, TTS_LANGUAGES, toBcp47, cookie name
 │   ├── i18n.tsx                   UI dictionary (11 languages) + useI18n()
-│   ├── callmissed.ts              CallMissed provider, model ids, callmissedFetch
+│   ├── callmissed.ts              CallMissed provider, model ids (env defaults), callmissedFetch
+│   ├── model-catalog.ts           MODEL_CATALOG: pickable provider/model per MODEL_FUNCTIONS entry
 │   ├── pmfby.ts                   calculatePmfbyPremium (pure)
 │   ├── kb/chunk.ts, kb/url-guard.ts  pure KB helpers
 │   ├── kiosk/session.ts           pure kiosk state machine (idle reset)
@@ -103,6 +106,7 @@ chat/
 | **kb_queries** | query, category?, language?, hits, topScore?, mode (`vector\|text\|none`), createdAt | by_createdAt | Every KB search. `mode:"none"` / `hits:0` counts as unanswered |
 | **grievances** | userId, refId (`GRV-XXXXXXXX`), category, subject, description, contact?, status (`submitted\|in_review\|resolved\|rejected`), **channel?** (`web\|kiosk`), **district?**, **societyName?**, **language?**, **updates?**[{status, note, at, byName}], createdAt | by_userId, by_refId, **by_status** | `updates` is the public timeline |
 | **tts_audio** | storageId, createdAt | by_createdAt | Deleted after 6 h by cron |
+| **app_settings** | key (`model:<function>`), provider, model, updatedBy?, updatedAt | by_key | Admin-set model overrides (`convex/settings.ts`); missing row = catalog/env default. No secrets |
 
 Bold marks fields and tables added for the SIH prototype.
 
@@ -112,6 +116,7 @@ Bold marks fields and tables added for the SIH prototype.
 // lib/constants.ts
 KB_CATEGORIES, KB_CATEGORY_LABELS, GRIEVANCE_CATEGORIES, GRIEVANCE_STATUSES, ROLES
 type Role = "member" | "officer" | "admin" | "kiosk";  isStaffRole(role)
+MODEL_FUNCTIONS = ["chatSmall","chatLarge","reasoning","stt","tts","ttsVoice"];  type ModelFunction
 
 // lib/languages.ts
 LANGUAGES, languageByCode(code), LANGUAGE_COOKIE = "sahayak-lang"
@@ -169,7 +174,18 @@ toCsv(rows, columns: { key, header }[]) → string   // UTF-8 BOM, RFC 4180 quot
 api.analytics.overview → { grievances: stats, kb: { entries, chunks, pendingEmbeddings },
   queries: { total, truncated, byLanguage, byCategory, byMode }, unanswered: [{ query, language?, createdAt, count }] }  // repeats grouped  // staff
 
-// convex/voice.ts
+// convex/settings.ts — "Models & voice" selections, app_settings rows keyed "model:<fn>"
+api.settings.listModels → [{ function, provider, model, defaultModel, overridden }]  // admin;
+  // last row is function:"embedding" (read-only; indexes are fixed at 1536 dims)
+api.settings.effectiveModel({ function }) → { provider, model }   // signed-in; used by api/chat route
+api.settings.setModel({ function, provider, model }) → { provider, model }  // admin; catalog-validated
+api.settings.resetModel({ function }) → { provider, model }                 // admin; back to env default
+internal.settings.modelFor({ function }) → { provider, model }   // used by voice.ts actions
+// lib/model-catalog.ts: MODEL_CATALOG[fn].options, defaultModelId(fn) (CALLMISSED_MODEL_* env wins),
+//   isCatalogChoice(fn, provider, model). lib/ai/models.ts: CHAT_MODEL_FUNCTIONS (tier → function),
+//   chatLanguageModel(tier, selection?) — falls back to the env default for unknown/absent selections.
+
+// convex/voice.ts — STT/TTS model (+voice) read from app_settings at call time
 api.voice.transcribe({ storageId, language? }) → { text }      // language = short code; sent as BCP-47
 api.voice.synthesize({ text, language? }) → { url }
 

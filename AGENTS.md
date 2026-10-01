@@ -40,10 +40,11 @@ npm run build
 | `app/(chat)/api/chat/route.ts` | Chat endpoint: `streamText` + tools, reads `sahayak-lang` cookie for response language |
 | `app/(chat)/knowledge/` | KB admin page — paste text, fetch URL, upload PDF/text |
 | `app/(chat)/grievances/` | User's filed grievances |
-| `convex/schema.ts` | Tables: users/chats/messages/documents/suggestions/memories/streams (upstream) + `kb_entries`, `grievances` (Sahayak) |
+| `convex/schema.ts` | Tables: users/chats/messages/documents/suggestions/memories/streams (upstream) + `kb_entries`, `grievances`, `app_settings` (Sahayak) |
 | `convex/kb.ts` | KB ingestion (chunk → embed → insert) and `searchKnowledgeBase` vector search |
 | `convex/voice.ts` | `transcribe` (STT, `saaras:v3`) and `synthesize` (TTS, `bulbul:v3`) actions |
 | `convex/grievances.ts` | `file` mutation (returns `GRV-XXXXXXXX` ref) + `listMine` |
+| `convex/settings.ts` + `lib/model-catalog.ts` | Admin-selectable provider/model per function (`app_settings` rows); read at call time by the chat route and `voice.ts` |
 | `lib/callmissed.ts` | CallMissed provider, model ids (env-overridable), `callmissedFetch` helper. Isomorphic: used by Next.js **and** Convex actions |
 | `lib/ai/models.ts` | `myProvider` — maps app model ids to CallMissed models |
 | `lib/ai/prompts.ts` | System prompt (Sahayak persona, KB-first rule, language instruction) |
@@ -110,6 +111,7 @@ verified working (the admin account uses it).
 - **Knowledge base:** staff-only writes, SSRF guard, full-text fallback when embeddings fail, query log, and 8 curated entries in `data/kb` (`npm run seed:kb`).
 - **Grievances:** filing with a timeline, officer console, and public `/track`.
 - **Officer dashboard:** `/admin`, `/admin/grievances`, `/admin/users`.
+- **Model settings:** `/admin/models` (admin) — switch the provider/model for chat tiers, STT and TTS + voice without redeploying; stored in `app_settings`, env vars stay the defaults. Embeddings are fixed (1536-dim).
 - **Raspberry Pi kiosk:** `/kiosk` and `hardware/pi/`.
 - **PWA and access:** PWA manifest and icons, and route protection in `middleware.ts`.
 

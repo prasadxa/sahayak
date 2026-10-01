@@ -3,7 +3,7 @@ import { action, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assertWithinLimit } from "./ratelimits";
-import { CALLMISSED_MODELS, callmissedFetch } from "@/lib/callmissed";
+import { callmissedFetch } from "@/lib/callmissed";
 import { toBcp47 } from "@/lib/languages";
 
 /** Generated read-aloud clips older than this are deleted by the hourly cron. */
@@ -14,8 +14,9 @@ const CLEANUP_BATCH = 100;
  * Speech-to-text via CallMissed POST /v1/audio/transcriptions.
  * Accepts a Convex storage id holding an audio clip (webm/mp3/wav/...).
  * `language` is a short code (`hi`); it is sent as BCP-47 (`hi-IN`). For
- * English or when omitted, `saaras:v3` auto-detects across 22 Indian
- * languages, which suits code-mixed rural speech. The uploaded clip is
+ * English or when omitted, the STT model (default `saaras:v3`, settable at
+ * /admin/models) auto-detects across 22 Indian languages, which suits
+ * code-mixed rural speech. The uploaded clip is
  * deleted once transcribed. Only files whose stored content type is
  * `audio/*` are accepted, so the action can't be used to delete someone
  * else's avatar or KB upload by id.
@@ -56,9 +57,15 @@ export const transcribe = action({
             ? "mp3"
             : "webm";
 
+      // Operator-selectable via /admin/models (default saaras:v3).
+      const stt: { provider: string; model: string } = await ctx.runQuery(
+        internal.settings.modelFor,
+        { function: "stt" }
+      );
+
       const form = new FormData();
       form.append("file", blob, `recording.${ext}`);
-      form.append("model", CALLMISSED_MODELS.stt);
+      form.append("model", stt.model);
       if (args.language && args.language !== "en") {
         form.append("language", toBcp47(args.language));
       }
@@ -78,8 +85,9 @@ export const transcribe = action({
 });
 
 /**
- * Text-to-speech via CallMissed POST /v1/audio/speech (`bulbul:v3`,
- * 11 Indian languages). `language` is a short code; it is sent as BCP-47
+ * Text-to-speech via CallMissed POST /v1/audio/speech (default `bulbul:v3`,
+ * 11 Indian languages; model and voice settable at /admin/models).
+ * `language` is a short code; it is sent as BCP-47
  * in both `language` and `target_language_code` (the API ignores unknown
  * fields). Returns a Convex storage URL; the clip is recorded in
  * `tts_audio` so the cron can delete it later.
@@ -101,12 +109,21 @@ export const synthesize = action({
     );
 
     const bcp47 = args.language ? toBcp47(args.language) : undefined;
+    // Operator-selectable via /admin/models (defaults bulbul:v3 + shubh).
+    const tts: { provider: string; model: string } = await ctx.runQuery(
+      internal.settings.modelFor,
+      { function: "tts" }
+    );
+    const ttsVoice: { provider: string; model: string } = await ctx.runQuery(
+      internal.settings.modelFor,
+      { function: "ttsVoice" }
+    );
     const res = await callmissedFetch("/audio/speech", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: CALLMISSED_MODELS.tts,
-        voice: args.voice ?? CALLMISSED_MODELS.ttsVoice,
+        model: tts.model,
+        voice: args.voice ?? ttsVoice.model,
         input: args.text.slice(0, 4000),
         response_format: "mp3",
         ...(bcp47 ? { language: bcp47, target_language_code: bcp47 } : {}),

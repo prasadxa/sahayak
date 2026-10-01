@@ -166,6 +166,11 @@ const Dashboard = ({ isAdmin }: { isAdmin: boolean }) => {
             <Link href="/admin/users">Manage roles</Link>
           </Button>
         )}
+        {isAdmin && (
+          <Button asChild variant="outline">
+            <Link href="/admin/models">Models &amp; voice</Link>
+          </Button>
+        )}
       </div>
     </div>
   );
