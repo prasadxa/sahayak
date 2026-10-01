@@ -96,6 +96,44 @@ describe("analytics.overview", () => {
     expect(Object.keys(o.unanswered[0]).sort()).toEqual(["count", "createdAt", "language", "query"]);
   });
 
+  it("folds non-Convex-key language/category values into 'other' instead of crashing", async () => {
+    const t = convexTest(schema, modules);
+    const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
+    const now = Date.now();
+    // kb_queries.language comes from the raw sahayak-lang cookie and category
+    // is a free-form searchKnowledgeBase arg — both can hold arbitrary text.
+    // Convex object keys must be non-control ASCII, ≤1024 chars and not start
+    // with "$", so these rows would throw "invalid character" while the
+    // overview result is serialised (same class as the byDistrict fix).
+    await t.run(async (ctx) => {
+      const rows = [
+        { query: "native script", language: "हिन्दी" },
+        { query: "district cat", category: "पुणे" },
+        { query: "dollar", language: "$eq" },
+        { query: "ctor", category: "constructor" },
+        { query: "overlong", language: "x".repeat(1100) },
+        { query: "empty", language: "" },
+        { query: "fine", language: "hi", category: "pmfby" },
+      ];
+      for (const [i, r] of rows.entries()) {
+        await ctx.db.insert("kb_queries", {
+          ...r,
+          hits: 1,
+          mode: "text",
+          createdAt: now - (i + 1) * 1000,
+        });
+      }
+    });
+    const o = await officer.client.query(api.analytics.overview, {});
+    expect(o.queries.byLanguage).toEqual({ other: 4, unknown: 2, hi: 1 });
+    expect(o.queries.byCategory).toEqual({
+      unspecified: 4,
+      other: 1,
+      constructor: 1,
+      pmfby: 1,
+    });
+  });
+
   it("reads KB counts from kb_sources, not the chunk rows", async () => {
     const t = convexTest(schema, modules);
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
