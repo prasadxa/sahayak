@@ -12,8 +12,27 @@ const QUERY_SCAN_CAP = 5000;
 /** Extra rows (older than 30 days) scanned for unanswered questions. */
 const OLDER_UNANSWERED_SCAN = 1000;
 
+/**
+ * Convex object keys must be ≤1024 chars, not start with "$" and contain
+ * only non-control ASCII (the byDistrict fix in grievances.ts hit the same
+ * rule). kb_queries.language arrives from the caller's `sahayak-lang`
+ * cookie and category is a free-form searchKnowledgeBase action arg, so a
+ * crafted value ("हिन्दी", "$eq", …) would crash this query while the result
+ * is serialised — fold invalid keys into "other".
+ */
+const INVALID_KEY_CHARS = /[^\x20-\x7e]/;
+function safeKey(key: string): string {
+  return key !== "" &&
+    key.length <= 1024 &&
+    !key.startsWith("$") &&
+    !INVALID_KEY_CHARS.test(key)
+    ? key
+    : "other";
+}
+
 function bump(map: Record<string, number>, key: string) {
-  map[key] = (map[key] ?? 0) + 1;
+  const k = safeKey(key);
+  map[k] = (map[k] ?? 0) + 1;
 }
 
 /**
@@ -45,8 +64,11 @@ export const overview = query({
     const truncated = scanned.length > QUERY_SCAN_CAP;
     const recent = truncated ? scanned.slice(0, QUERY_SCAN_CAP) : scanned;
 
-    const byLanguage: Record<string, number> = {};
-    const byCategory: Record<string, number> = {};
+    // Null-prototype maps: "constructor"/"hasOwnProperty" are legal Convex
+    // keys that would read the prototype on a plain object (a "__proto__"
+    // key is silently dropped on the wire either way).
+    const byLanguage: Record<string, number> = Object.create(null);
+    const byCategory: Record<string, number> = Object.create(null);
     const byMode: Record<string, number> = { vector: 0, text: 0, none: 0 };
     for (const r of recent) {
       bump(byLanguage, r.language ?? "unknown");

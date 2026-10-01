@@ -168,6 +168,9 @@ toCsv(rows, columns: { key, header }[]) → string   // UTF-8 BOM, RFC 4180 quot
 // convex/analytics.ts
 api.analytics.overview → { grievances: stats, kb: { entries, chunks, pendingEmbeddings },
   queries: { total, truncated, byLanguage, byCategory, byMode }, unanswered: [{ query, language?, createdAt, count }] }  // repeats grouped  // staff
+// byLanguage/byCategory keys that aren't valid Convex field names (non-ASCII, "$"-leading,
+// >1024 chars — language/category arrive from the sahayak-lang cookie / free-form action args)
+// fold into "other" instead of crashing serialisation.
 
 // convex/voice.ts
 api.voice.transcribe({ storageId, language? }) → { text }      // language = short code; sent as BCP-47
