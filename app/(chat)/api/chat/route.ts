@@ -7,7 +7,7 @@ import {
   streamText,
 } from "ai";
 
-import { chatLanguageModel, CHAT_MODEL_FUNCTIONS } from "@/lib/ai/models";
+import { chatLanguageModel, CHAT_MODEL_FUNCTIONS, DEFAULT_CHAT_MODEL } from "@/lib/ai/models";
 import { generateTitleFromUserMessage } from "@/lib/ai/utils";
 import { systemPrompt } from "@/lib/ai/prompts";
 
@@ -97,6 +97,11 @@ export async function POST(request: Request) {
     });
   }
 
+  // A forged or stale tier id must resolve to a known model.
+  const chatModel = CHAT_MODEL_FUNCTIONS[selectedChatModel]
+    ? selectedChatModel
+    : DEFAULT_CHAT_MODEL;
+
   // Same check as RootLayout: only a known code. The raw cookie value is
   // stored on chats, grievances and kb_queries rows (and reaches the admin
   // dashboard's byLanguage counts), so an arbitrary value must not propagate.
@@ -111,7 +116,7 @@ export async function POST(request: Request) {
   // The operator may repoint each chat tier's backing provider/model at
   // /admin/models; resolve it fresh per request. A lookup failure falls
   // back to the env-configured default.
-  const modelFunction = CHAT_MODEL_FUNCTIONS[selectedChatModel];
+  const modelFunction = CHAT_MODEL_FUNCTIONS[chatModel];
   const modelSelection = modelFunction
     ? await fetchQuery(
         api.settings.effectiveModel,
@@ -206,19 +211,19 @@ export async function POST(request: Request) {
       const activeTools: ToolName[] = [
         ...domainTools,
         // Personal memory is per user; a kiosk account serves many citizens.
-        ...(selectedChatModel === "chat-model-reasoning" || isKiosk
+        ...(chatModel === "chat-model-reasoning" || isKiosk
           ? []
           : (["addResource", "getInformation"] as ToolName[])),
         // The kiosk cannot show documents.
-        ...(selectedChatModel === "chat-model-reasoning" || isKiosk
+        ...(chatModel === "chat-model-reasoning" || isKiosk
           ? []
           : (["createDocument", "updateDocument", "requestSuggestions"] as ToolName[])),
         ...(useWebSearch ? (["webSearch"] as ToolName[]) : []),
       ];
 
       const result = streamText({
-        model: chatLanguageModel(selectedChatModel, modelSelection),
-        system: systemPrompt({ selectedChatModel, language, role }),
+        model: chatLanguageModel(chatModel, modelSelection),
+        system: systemPrompt({ selectedChatModel: chatModel, language, role }),
         messages: allMessages,
         maxSteps: 5,
         experimental_activeTools: activeTools,
@@ -278,12 +283,13 @@ export async function POST(request: Request) {
       result.mergeIntoDataStream(dataStream, { sendReasoning: true });
     },
     onError: (error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      // The message may contain an upstream provider's response body; log
+      // the error name only and return a generic string to the client.
       console.error(
         "[api/chat] Stream error:",
         error instanceof Error ? error.name : "unknown error"
       );
-      return `Oops, an error occurred during streaming: ${errorMessage}`;
+      return "Sorry, something went wrong while answering. Please try again.";
     },
   });
 

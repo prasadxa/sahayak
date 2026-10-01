@@ -1,17 +1,9 @@
-import { convexTest, type TestConvex } from "convex-test";
+import type { TestConvex } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
-
-/** searchKnowledgeBase consumes a rate-limit bucket — register the component. */
-function testConvex() {
-  const t = convexTest(schema, modules);
-  registerRateLimiter(t);
-  return t;
-}
 
 const PMFBY_TEXT =
   "Under PMFBY the farmer premium is 2% of the sum insured for kharif crops and 1.5% for rabi crops. " +
@@ -57,7 +49,7 @@ function embeddingsUp() {
   return fetchMock;
 }
 
-async function seedChunks(t: ReturnType<typeof convexTest>) {
+async function seedChunks(t: ReturnType<typeof testConvex>) {
   await t.mutation(internal.kb.insertChunks, {
     entryId: "entry-pmfby",
     title: "PMFBY basics",
@@ -228,6 +220,23 @@ describe("kb with the embeddings API down", () => {
     expect(logs[0].hits).toBeGreaterThan(0);
   });
 
+  it("drops out-of-catalog category and language instead of applying them", async () => {
+    const t = testConvex();
+    await seedChunks(t);
+    embeddingsDown();
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+    const out = await client.action(api.kb.searchKnowledgeBase, {
+      query: "PMFBY premium rabi",
+      category: "not-a-category",
+      language: "xx",
+    });
+    // An unknown category is ignored rather than filtering to zero hits.
+    expect(out).toContain("PMFBY basics");
+    const logs = await t.run((ctx) => ctx.db.query("kb_queries").collect());
+    expect(logs[0].language).toBeUndefined();
+    expect(logs[0].category).toBeUndefined();
+  });
+
   it("returns the not-found message and logs mode none when nothing matches", async () => {
     const t = testConvex();
     await seedChunks(t);
@@ -356,7 +365,7 @@ describe("admin via ADMIN_EMAILS", () => {
   }, 20_000);
 });
 
-type TestT = ReturnType<typeof convexTest>;
+type TestT = ReturnType<typeof testConvex>;
 
 async function sources(t: TestT) {
   const rows = await t.run((ctx) => ctx.db.query("kb_sources").collect());

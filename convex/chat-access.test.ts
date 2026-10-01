@@ -1,12 +1,10 @@
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
-import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
 
 async function setup() {
-  const t = convexTest(schema, modules);
+  const t = testConvex();
   const alice = await asUser(t, { email: "alice@example.com" });
   const mallory = await asUser(t, { email: "mallory@example.com" });
   await alice.client.mutation(api.chats.saveChat, {

@@ -5,6 +5,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { getRole, requireStaff } from "./roles";
+import { assertWithinLimit } from "./ratelimits";
 import { GRIEVANCE_CATEGORIES, GRIEVANCE_STATUSES } from "@/lib/constants";
 import { ageInDays, isOverdue, normalizeDistrict } from "@/lib/grievance-sla";
 
@@ -78,6 +79,7 @@ export const file = mutation({
     if (!subject || !description) throw new Error("Subject and description are required");
 
     const role = await getRole(ctx, userId);
+    await assertWithinLimit(ctx, "grievanceFile", role, userId);
     const refId = await uniqueRefId(ctx);
     const now = Date.now();
 

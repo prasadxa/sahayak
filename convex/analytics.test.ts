@@ -1,21 +1,19 @@
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
-import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
 
 const DAY = 24 * 60 * 60 * 1000;
 
 describe("analytics.overview", () => {
   it("forbids a member", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(client.query(api.analytics.overview, {})).rejects.toThrow(/Forbidden/);
   });
 
   it("returns counts matching seeded rows for an officer", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
@@ -97,7 +95,7 @@ describe("analytics.overview", () => {
   });
 
   it("folds non-Convex-key language/category values into 'other' instead of crashing", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     // kb_queries.language comes from the raw sahayak-lang cookie and category
@@ -135,7 +133,7 @@ describe("analytics.overview", () => {
   });
 
   it("reads KB counts from kb_sources, not the chunk rows", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     // A chunk row with no kb_sources row (pre-migration) is not scanned.
     await t.run((ctx) =>
@@ -149,7 +147,7 @@ describe("analytics.overview", () => {
   });
 
   it("caps the 30-day query scan at 5000 rows and says so", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await t.run(async (ctx) => {
@@ -166,7 +164,7 @@ describe("analytics.overview", () => {
   }, 30_000);
 
   it("passes grievance SLA and district stats through", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     const created = now - 30 * DAY;
@@ -195,7 +193,7 @@ describe("analytics.overview", () => {
 
 describe("analytics.overview unanswered questions", () => {
   it("groups repeats of the same question into one row with a count", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await t.run(async (ctx) => {

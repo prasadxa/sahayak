@@ -1,6 +1,6 @@
 # Sahayak: engineering handoff
 
-*Handed over from Claude Code to Devin, 2026-09-30. Last commit: `d56b719`. 292 tests passing.*
+*Handed over from Claude Code to Devin, 2026-09-30. Last commit: `d56b719`. 315 tests passing.*
 
 Read this first, then `AGENTS.md` (conventions) and `docs/architecture.md`
 (file tree, data schema, contracts). Everything below is the current state,
@@ -53,7 +53,7 @@ It works by text or voice, on phones, laptops and a PACS-office kiosk.
 - Convex 1.46 (DB, vector and full-text search, storage, crons) with `@convex-dev/auth` 0.0.80 (Password plus Google).
 - Vercel AI SDK 4.3 (`streamText` plus tools) on CallMissed models.
 - Hosting: Cloudflare Workers via `@opennextjs/cloudflare` ~1.15.1. It is pinned because Next is 15.3.8; the newer adapter needs Next ≥ 15.5.
-- Tests: Vitest with `convex-test` (21 files, 292 tests).
+- Tests: Vitest with `convex-test` (13 Convex files, 315 tests total).
 - CI/CD: GitHub Actions on Node 22 (wrangler 4.144 requires Node ≥ 22).
 
 ## 4. Features (all built and tested)
@@ -99,7 +99,7 @@ It works by text or voice, on phones, laptops and a PACS-office kiosk.
 ```bash
 npm install
 npm run dev                  # next dev --turbo + convex dev (dev deployment)
-npm test                     # vitest (297 tests); convex-test for convex/*.test.ts
+npm test                     # vitest (315 tests); convex-test for convex/*.test.ts
 npx tsc --noEmit             # also: npx tsc --noEmit -p convex
 npm run lint
 npm run build                # plain Next build (shares .next with the dev server: stop dev first)
@@ -144,7 +144,7 @@ A Convex push is **not** rolled back. `ci.yml` runs on PRs and on pushes to `mai
 - **Hardware:** the kiosk has **not been tested on real Pi hardware** (GPIO button, thermal printer, mic and speaker). Push-to-talk with a real microphone is untested in automation.
 - ~~**Production is empty**~~ Prod is seeded (24 demo grievances, 120 query rows) and has accounts: `kiosk@sahayak.in` (kiosk), `member@sahayak.in` (member), `officer@sahayak.in` (officer, granted via `grantRole` — a Password account; for a real officer prefer a Google sign-in + `/admin/users`). Passwords were communicated to the owner; rotate before the event if needed.
 - **URL guard:** it is lexical only. DNS rebinding isn't covered; the risk is accepted because ingest is staff-only.
-- ~~**Rate limits:** there are none on chat, TTS or search.~~ Done (2026-10-01): `@convex-dev/rate-limiter` token buckets per user — chat 20/min, voice (STT+TTS) 20/min, KB search 40/min; kiosk accounts get wider `*Kiosk` buckets (60/60/120) since one login serves a whole queue. Chat route → 429 + `Retry-After`; voice/kb actions throw a retry-after error. Config in `convex/ratelimits.ts`; tests register the component via `@convex-dev/rate-limiter/test`.
+- ~~**Rate limits:** there are none on chat, TTS or search.~~ Done (2026-10-01): `@convex-dev/rate-limiter` token buckets per user — chat 20/min, voice (STT+TTS) 20/min, KB search 40/min, grievance filing 10/min, storage URLs 30/min, votes 60/min; kiosk accounts get wider `*Kiosk` buckets since one login serves a whole queue. Chat route → 429 + `Retry-After`; voice/kb actions throw a retry-after error. Config in `convex/ratelimits.ts`; tests that hit limited functions build `testConvex()` from `convex/test.setup.ts` (registers the component).
 - **Scale:** some admin queries scan whole tables (fine at prototype scale), and `exportRows` could hit Convex read limits with many long descriptions.
 - **Git history:** commit author emails are prasadxa's personal Gmail.
 - **Licence:** there is no LICENSE file; upstream has none either.

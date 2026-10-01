@@ -20,12 +20,18 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   chatMessage: { kind: "token bucket", rate: 20, period: MINUTE },
   voice: { kind: "token bucket", rate: 20, period: MINUTE },
   kbSearch: { kind: "token bucket", rate: 40, period: MINUTE },
+  grievanceFile: { kind: "token bucket", rate: 10, period: MINUTE },
+  storageUpload: { kind: "token bucket", rate: 30, period: MINUTE },
+  vote: { kind: "token bucket", rate: 60, period: MINUTE },
   chatMessageKiosk: { kind: "token bucket", rate: 60, period: MINUTE },
   voiceKiosk: { kind: "token bucket", rate: 60, period: MINUTE },
   kbSearchKiosk: { kind: "token bucket", rate: 120, period: MINUTE },
+  grievanceFileKiosk: { kind: "token bucket", rate: 30, period: MINUTE },
+  storageUploadKiosk: { kind: "token bucket", rate: 60, period: MINUTE },
+  voteKiosk: { kind: "token bucket", rate: 120, period: MINUTE },
 });
 
-type Bucket = "chatMessage" | "voice" | "kbSearch";
+type Bucket = "chatMessage" | "voice" | "kbSearch" | "grievanceFile" | "storageUpload" | "vote";
 
 /**
  * Take one token from `base`'s bucket for `userId` — the kiosk variant when

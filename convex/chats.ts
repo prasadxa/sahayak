@@ -8,6 +8,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 
 import { findChat, readableChat, requireOwnedChat, requireUserId } from "./access";
 import { getRole, roleOfUser } from "./roles";
+import { assertWithinLimit } from "./ratelimits";
 
 /** Deletes a chat and everything keyed by its chatId: messages, votes, documents, streams. */
 async function deleteChatAndChildren(ctx: MutationCtx, chat: Doc<"chats">): Promise<void> {
@@ -126,7 +127,8 @@ export const voteMessage = mutation({
     type: v.union(v.literal("up"), v.literal("down")),
   },
   handler: async (ctx, args) => {
-    await requireOwnedChat(ctx, args.chatId);
+    const { userId } = await requireOwnedChat(ctx, args.chatId);
+    await assertWithinLimit(ctx, "vote", await getRole(ctx, userId), userId);
     // The message must belong to this chat, or the owner of chat A could vote
     // on (or flip the vote of) a message in someone else's chat B.
     const message = await ctx.db

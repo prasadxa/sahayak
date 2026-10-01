@@ -1,8 +1,8 @@
-import { convexTest, type TestConvex } from "convex-test";
+import type { TestConvex } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { modules } from "./test.setup";
+import { testConvex } from "./test.setup";
 import { asUser } from "./test.helpers";
 import { makeRefId } from "./grievances";
 
@@ -27,7 +27,7 @@ async function grievanceByRef(t: TestConvex<typeof schema>, refId: string) {
 
 describe("grievances.file", () => {
   it("returns a GRV ref and seeds the timeline with a submitted entry", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     const { refId } = await client.mutation(api.grievances.file, sample);
     expect(refId).toMatch(/^GRV-[0-9A-F]{8}$/);
@@ -45,7 +45,7 @@ describe("grievances.file", () => {
   });
 
   it("sets channel web for a member and kiosk for a kiosk account", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     const kiosk = await asUser(t, { email: "kiosk.pacs01@example.com", role: "kiosk" });
     const web = await member.client.mutation(api.grievances.file, sample);
@@ -55,7 +55,7 @@ describe("grievances.file", () => {
   });
 
   it("rejects an unknown category", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(
       client.mutation(api.grievances.file, { ...sample, category: "weather" })
@@ -68,7 +68,7 @@ describe("grievances.file", () => {
     const uuid = (hex8: string) => `${hex8}-0000-4000-8000-000000000000` as const;
 
     it("regenerates the ref when it collides with an existing grievance", async () => {
-      const t = convexTest(schema, modules);
+      const t = testConvex();
       const { client } = await asUser(t, { email: "farmer@example.com" });
       const spy = vi.spyOn(crypto, "randomUUID");
       spy.mockReturnValueOnce(uuid("aaaaaaaa"));
@@ -83,7 +83,7 @@ describe("grievances.file", () => {
     });
 
     it("gives up after 5 colliding attempts", async () => {
-      const t = convexTest(schema, modules);
+      const t = testConvex();
       const { client } = await asUser(t, { email: "farmer@example.com" });
       const spy = vi.spyOn(crypto, "randomUUID").mockReturnValue(uuid("cccccccc"));
       await client.mutation(api.grievances.file, sample);
@@ -102,7 +102,7 @@ describe("grievances.file", () => {
   });
 
   it("requires sign-in", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     await expect(t.mutation(api.grievances.file, sample)).rejects.toThrow(
       /Not authenticated/
     );
@@ -111,7 +111,7 @@ describe("grievances.file", () => {
 
 describe("grievances.updateStatus", () => {
   it("forbids a member", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     const { refId } = await client.mutation(api.grievances.file, sample);
     await expect(
@@ -124,7 +124,7 @@ describe("grievances.updateStatus", () => {
   });
 
   it("lets an officer append to the timeline and change the status", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     const officer = await asUser(t, {
       email: "officer@example.com",
@@ -149,7 +149,7 @@ describe("grievances.updateStatus", () => {
   });
 
   it("rejects an invalid status and an empty note", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const { refId } = await member.client.mutation(api.grievances.file, sample);
@@ -171,7 +171,7 @@ describe("grievances.updateStatus", () => {
   });
 
   it("throws for an unknown ref", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     await expect(
       officer.client.mutation(api.grievances.updateStatus, {
@@ -185,7 +185,7 @@ describe("grievances.updateStatus", () => {
 
 describe("grievances.track", () => {
   it("returns null for unknown and malformed refs", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     expect(await t.query(api.grievances.track, { refId: "GRV-DEADBEEF" })).toBeNull();
     expect(await t.query(api.grievances.track, { refId: "" })).toBeNull();
     expect(
@@ -194,7 +194,7 @@ describe("grievances.track", () => {
   });
 
   it("works signed out, matches case-insensitively and leaks no PII", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     const { refId } = await client.mutation(api.grievances.file, sample);
     const result = await t.query(api.grievances.track, {
@@ -216,14 +216,14 @@ describe("grievances.track", () => {
 
 describe("grievances.listAll and stats", () => {
   it("forbids members", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(client.query(api.grievances.listAll, {})).rejects.toThrow(/Forbidden/);
     await expect(client.query(api.grievances.stats, {})).rejects.toThrow(/Forbidden/);
   });
 
   it("filters by status and category and counts for staff", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const a = await member.client.mutation(api.grievances.file, sample);
@@ -290,7 +290,7 @@ async function seedGrievances(t: TestConvex<typeof schema>, rows: SeedRow[]) {
 
 describe("grievances SLA, districts and resolution time", () => {
   it("listAll adds ageDays and overdue to each row", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await seedGrievances(t, [
@@ -310,7 +310,7 @@ describe("grievances SLA, districts and resolution time", () => {
   });
 
   it("listAll filters by normalised district, including Unspecified", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await seedGrievances(t, [
@@ -333,7 +333,7 @@ describe("grievances SLA, districts and resolution time", () => {
   });
 
   it("stats counts overdue, districts and average resolution time", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     const c1 = now - 30 * DAY;
@@ -382,7 +382,7 @@ describe("grievances SLA, districts and resolution time", () => {
   it("stats survives non-ASCII district names", async () => {
     // Convex object keys must be non-control ASCII, so byDistrict is a list
     // of {district, count} — native-script districts like पुणे are values.
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await seedGrievances(t, [
@@ -398,7 +398,7 @@ describe("grievances SLA, districts and resolution time", () => {
   });
 
   it("stats returns null average resolution when nothing is resolved", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const s = await officer.client.query(api.grievances.stats, {});
     expect(s).toMatchObject({ total: 0, overdue: 0, avgResolutionDays: null, byDistrict: [] });
@@ -407,14 +407,14 @@ describe("grievances SLA, districts and resolution time", () => {
 
 describe("grievances.exportRows", () => {
   it("forbids members and signed-out callers", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
     await expect(client.query(api.grievances.exportRows, {})).rejects.toThrow(/Forbidden/);
     await expect(t.query(api.grievances.exportRows, {})).rejects.toThrow(/Not authenticated/);
   });
 
   it("returns flat rows with ISO dates, SLA fields and the last note", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const member = await asUser(t, { email: "farmer@example.com" });
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const { refId } = await member.client.mutation(api.grievances.file, sample);
@@ -451,7 +451,7 @@ describe("grievances.exportRows", () => {
   });
 
   it("uses empty strings for missing optional fields and filters like listAll", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await seedGrievances(t, [
@@ -491,7 +491,7 @@ describe("grievances.exportRows", () => {
   });
 
   it("returns at most 2000 rows", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const officer = await asUser(t, { email: "officer@example.com", role: "officer" });
     const now = Date.now();
     await seedGrievances(
@@ -508,7 +508,7 @@ describe("grievances.exportRows", () => {
 
 describe("grievance SLA uses the caller's clock", () => {
   it("marks a fresh grievance overdue when the caller's now is past the target", async () => {
-    const t = convexTest(schema, modules);
+    const t = testConvex();
     const citizen = await asUser(t, { email: "farmer.sla@example.com" });
     const officer = await asUser(t, { email: "officer.sla@example.com", role: "officer" });
     await citizen.client.mutation(api.grievances.file, {
