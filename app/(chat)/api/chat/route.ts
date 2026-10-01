@@ -12,7 +12,7 @@ import { generateTitleFromUserMessage } from "@/lib/ai/utils";
 import { systemPrompt } from "@/lib/ai/prompts";
 
 import { generateUUID, getTrailingMessageId, convertToUIMessages } from "@/lib/utils";
-import { DEFAULT_LANGUAGE, LANGUAGE_COOKIE } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, LANGUAGE_COOKIE, LANGUAGES } from "@/lib/languages";
 
 import { createDocument } from "@/lib/ai/tools/create-document";
 import { updateDocument } from "@/lib/ai/tools/update-document";
@@ -97,7 +97,13 @@ export async function POST(request: Request) {
     });
   }
 
-  const language = (await cookies()).get(LANGUAGE_COOKIE)?.value ?? DEFAULT_LANGUAGE;
+  // Same check as RootLayout: only a known code. The raw cookie value is
+  // stored on chats, grievances and kb_queries rows (and reaches the admin
+  // dashboard's byLanguage counts), so an arbitrary value must not propagate.
+  const cookieLang = (await cookies()).get(LANGUAGE_COOKIE)?.value;
+  const language = LANGUAGES.some((l) => l.code === cookieLang)
+    ? (cookieLang as string)
+    : DEFAULT_LANGUAGE;
   const me = await fetchQuery(api.roles.me, {}, { token }).catch(() => null);
   const role = me?.role ?? "member";
   const isKiosk = role === "kiosk";
@@ -109,7 +115,11 @@ export async function POST(request: Request) {
     return new Response("Forbidden", { status: 403 });
   }
   if (!chat) {
-    const title = await generateTitleFromUserMessage({ message: userMessage });
+    // Best effort: a title-model outage must not 500 the whole chat — fall
+    // back to the start of the user's message.
+    const title = await generateTitleFromUserMessage({ message: userMessage }).catch(
+      () => userMessage.content.trim().slice(0, 80) || "New chat"
+    );
     try {
       await fetchMutation(
         api.chats.saveChat,
