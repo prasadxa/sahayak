@@ -7,7 +7,7 @@ import {
   streamText,
 } from "ai";
 
-import { myProvider } from "@/lib/ai/models";
+import { chatLanguageModel, CHAT_MODEL_FUNCTIONS } from "@/lib/ai/models";
 import { generateTitleFromUserMessage } from "@/lib/ai/utils";
 import { systemPrompt } from "@/lib/ai/prompts";
 
@@ -102,6 +102,18 @@ export async function POST(request: Request) {
   const role = me?.role ?? "member";
   const isKiosk = role === "kiosk";
 
+  // The operator may repoint each chat tier's backing provider/model at
+  // /admin/models; resolve it fresh per request. A lookup failure falls
+  // back to the env-configured default.
+  const modelFunction = CHAT_MODEL_FUNCTIONS[selectedChatModel];
+  const modelSelection = modelFunction
+    ? await fetchQuery(
+        api.settings.effectiveModel,
+        { function: modelFunction },
+        { token }
+      ).catch(() => null)
+    : null;
+
   // getChatById returns null for another user's private chat; saveChat then
   // refuses the duplicate id, so both cases end in 403 below.
   const chat = await fetchQuery(api.chats.getChatById, { chatId: id }, { token });
@@ -195,7 +207,7 @@ export async function POST(request: Request) {
       ];
 
       const result = streamText({
-        model: myProvider.languageModel(selectedChatModel),
+        model: chatLanguageModel(selectedChatModel, modelSelection),
         system: systemPrompt({ selectedChatModel, language, role }),
         messages: allMessages,
         maxSteps: 5,

@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Plus,
   Search,
+  SlidersHorizontal,
   TextSearch,
 } from "lucide-react";
 import { useQuery } from "convex/react";
@@ -41,6 +42,7 @@ export const AppSidebar = ({ user }: { user: Doc<"users"> | null }) => {
   const label = useTranslate();
   const me = useQuery(api.roles.me, user ? {} : "skip");
   const isStaff = !!me && isStaffRole(me.role);
+  const isAdmin = me?.role === "admin";
 
   const navItems = [
     { href: "/grievances", label: label("nav.grievances", "My grievances"), icon: FileWarning },
@@ -51,6 +53,9 @@ export const AppSidebar = ({ user }: { user: Doc<"users"> | null }) => {
           { href: "/admin", label: label("nav.dashboard", "Dashboard"), icon: LayoutDashboard },
           { href: "/admin/grievances", label: "Grievance console", icon: ClipboardList },
         ]
+      : []),
+    ...(isAdmin
+      ? [{ href: "/admin/models", label: "Models & voice", icon: SlidersHorizontal }]
       : []),
   ];
   const [openCommandDialog, setOpenCommandDialog] = useState(false);

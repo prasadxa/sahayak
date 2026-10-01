@@ -78,6 +78,7 @@ It works by text or voice, on phones, laptops and a PACS-office kiosk.
   - `ADMIN_EMAILS` only applies to **verified** (Google) emails.
   - `setRole` gives staff roles only to verified accounts.
   - `npx convex run roles:grantRole '{"email":…,"role":…}'` is an operator bootstrap and is internal only.
+- **Model & voice settings (`/admin/models`, admin only):** per-function provider/model overrides live in the `app_settings` table (`model:<function>` keys) and are resolved at call time — chat route via `api.settings.effectiveModel`, `voice.ts` via `internal.settings.modelFor`. The option lists are in `lib/model-catalog.ts`; the `CALLMISSED_MODEL_*` env vars remain the defaults, and a missing row means default. Embeddings stay fixed (1536-dim indexes).
 - **Kiosk (`/kiosk`, Raspberry Pi 4):**
   - Language tiles, hold-to-talk (touch or F8/Space; a GPIO button sends F8) and auto-spoken answers.
   - A receipt with a QR code linking to `/track`, and a 58 mm print stylesheet.

@@ -195,4 +195,15 @@ export default defineSchema({
     storageId: v.id("_storage"),
     createdAt: v.number(),
   }).index("by_createdAt", ["createdAt"]),
+
+  // Operator-editable settings, one row per namespaced key. "Models & voice"
+  // stores `model:<function>` → {provider, model}; writes are admin-only via
+  // convex/settings.ts. Never store secrets here — API keys stay in env vars.
+  app_settings: defineTable({
+    key: v.string(),
+    provider: v.string(),
+    model: v.string(),
+    updatedBy: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });

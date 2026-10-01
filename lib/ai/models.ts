@@ -5,6 +5,7 @@ import {
 } from "ai";
 
 import { callmissed, CALLMISSED_MODELS } from "@/lib/callmissed";
+import type { ModelFunction } from "@/lib/constants";
 
 export const DEFAULT_CHAT_MODEL: string = "chat-model-small";
 
@@ -54,3 +55,35 @@ export const chatModels: Array<ChatModel> = [
     description: "Step-by-step reasoning for complex questions",
   },
 ];
+
+/**
+ * Client-facing chat tier id → the settings function whose stored selection
+ * (api.settings.effectiveModel, set at /admin/models) decides its backing
+ * provider model. Tiers without an entry always use the env default.
+ */
+export const CHAT_MODEL_FUNCTIONS: Record<string, ModelFunction> = {
+  "chat-model-small": "chatSmall",
+  "chat-model-large": "chatLarge",
+  "chat-model-reasoning": "reasoning",
+};
+
+/**
+ * Language model for a chat tier, honouring the admin's stored selection.
+ * `selection` is `{ provider, model }` from api.settings.effectiveModel;
+ * an absent or unknown provider falls back to the env-configured provider.
+ */
+export function chatLanguageModel(
+  appModelId: string,
+  selection?: { provider: string; model: string } | null
+) {
+  if (selection && selection.provider === "callmissed") {
+    const base = cm.chat(selection.model);
+    return appModelId === "chat-model-reasoning"
+      ? wrapLanguageModel({
+          model: base,
+          middleware: extractReasoningMiddleware({ tagName: "think" }),
+        })
+      : base;
+  }
+  return myProvider.languageModel(appModelId);
+}
