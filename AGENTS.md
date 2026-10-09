@@ -116,7 +116,8 @@ verified working (the admin account uses it).
 - **PWA and access:** PWA manifest and icons, and route protection in `middleware.ts`.
 
 **Known gaps / next up:**
-- The CallMissed `/v1/embeddings` endpoint was returning 502 on 2026-09-30, so all 49 seeded chunks are awaiting embedding. Search uses full-text until then. Run `npx convex run kb:backfillEmbeddingsInternal '{}'` when it recovers. `/v1/audio/transcriptions` (STT) also 502'd that evening — check STT health before the voice demo; the kiosk degrades gracefully ("didn't catch that" → retry).
+- Embeddings (2026-10-09): `text-embedding-3-small` 502s on CallMissed, so `lib/ai/embed.ts` uses `text-embedding-3-large` with `dimensions: 1536` first and falls back to `-small`. The 49 seeded chunks still need `npx convex run --prod kb:backfillEmbeddingsInternal '{}'` after this deploys; search uses full-text until then.
+- STT (2026-10-09): CallMissed returns 400 for the WebM/Opus Chrome records, so clients upload 16 kHz mono WAV (`lib/audio-wav.ts`). TTS: `bulbul:v3` covers 18 of 23 codes; Urdu is routed to `CALLMISSED_MODELS.ttsUrdu` (`lib/tts-languages.ts`), Sindhi and Kashmiri have no honest TTS (text only), Santali/Manipuri work with correct-script text. The kiosk degrades gracefully when audio is unavailable.
 - The kiosk has not yet been tested on real Pi hardware (GPIO button, printer, audio).
 - Rate limiting is in place (`@convex-dev/rate-limiter`, `convex/ratelimits.ts`): per-user token buckets on chat (20/min), voice (20/min), KB search (40/min), grievance filing (10/min), storage URLs (30/min) and votes (60/min); kiosk-role accounts get wider buckets. Convex tests that call a rate-limited function must build their harness with `testConvex()` from `convex/test.setup.ts`, which registers the component.
 - ~~**Go-live steps**~~ Done (2026-09-30): deploy secrets set, prod OAuth configured, prod seeded, admin active.

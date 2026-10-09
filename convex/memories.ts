@@ -1,6 +1,4 @@
-import { embed, embedMany } from "ai";
-
-import { myProvider } from "@/lib/ai/models";
+import { embedBatch, embedOne } from "@/lib/ai/embed";
 
 import { v } from "convex/values";
 import {
@@ -26,11 +24,7 @@ function generateChunks(input: string): string[] {
 
 async function generateEmbedding(value: string): Promise<number[]> {
   const input = value.replaceAll("\n", " ");
-  const { embedding } = await embed({
-    model: myProvider.textEmbeddingModel("text-embedding-3-small"),
-    value: input,
-  });
-  return embedding;
+  return embedOne(input, 2);
 }
 
 async function generateEmbeddings(
@@ -39,10 +33,7 @@ async function generateEmbeddings(
   const chunks = generateChunks(value);
   if (chunks.length === 0) return [];
 
-  const { embeddings } = await embedMany({
-    model: myProvider.textEmbeddingModel("text-embedding-3-small"),
-    values: chunks,
-  });
+  const embeddings = await embedBatch(chunks, 2);
   return embeddings.map((vector, i) => ({
     content: chunks[i],
     embedding: vector,

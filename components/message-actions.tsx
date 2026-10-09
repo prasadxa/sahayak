@@ -31,7 +31,7 @@ import equal from "fast-deep-equal";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useI18n } from "@/lib/i18n";
-import { isTtsLanguage } from "@/lib/languages";
+import { canReadAloud } from "@/lib/tts-languages";
 
 function messageText(message: Message): string {
   if (message.parts?.length) {
@@ -88,7 +88,7 @@ const PureMessageActions = ({
   if (isLoading) return null;
   if (message.role === "user") return null;
 
-  const canSpeak = isTtsLanguage(lang);
+  const canSpeak = canReadAloud(lang);
 
   const playAudio = async () => {
     const text = messageText(message).slice(0, 4000);

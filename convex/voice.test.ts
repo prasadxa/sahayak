@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ConvexError } from "convex/values";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { testConvex } from "./test.setup";
@@ -103,6 +104,33 @@ describe("voice", () => {
     expect(captured.filter((c) => c.url.endsWith("/audio/speech"))).toHaveLength(0);
   });
 
+  it("synthesize routes Urdu to a model that speaks it, without bulbul language fields", async () => {
+    const t = testConvex();
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+
+    const { url } = await client.action(api.voice.synthesize, {
+      text: "آپ کا خیر مقدم ہے",
+      language: "ur",
+    });
+
+    expect(url).toBeTruthy();
+    const body = JSON.parse(String(captured.find((c) => c.url.endsWith("/audio/speech"))?.body));
+    expect(body.model).toBe("gpt-4o-mini-tts");
+    expect(body.voice).toBe("alloy");
+    expect(body.language).toBeUndefined();
+  });
+
+  it("synthesize returns unsupported (no CallMissed call) for Sindhi and Kashmiri", async () => {
+    const t = testConvex();
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+
+    for (const language of ["sd", "ks"]) {
+      const res = await client.action(api.voice.synthesize, { text: "x", language });
+      expect(res).toEqual({ url: null, unsupported: true });
+    }
+    expect(captured.filter((c) => c.url.endsWith("/audio/speech"))).toHaveLength(0);
+  });
+
   it("transcribe sends BCP-47 language and deletes the uploaded clip", async () => {
     const t = testConvex();
     const { client } = await asUser(t, { email: "farmer@example.com" });
@@ -117,6 +145,26 @@ describe("voice", () => {
     const form = captured.find((c) => c.url.endsWith("/audio/transcriptions"))
       ?.body as FormData;
     expect(form.get("language")).toBe("mr-IN");
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull();
+  });
+
+  it("transcribe surfaces an upstream 400 as a clear ConvexError and still deletes the clip", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response('{"error":{"message":"unsupported format"}}', { status: 400 }))
+    );
+    const t = testConvex();
+    const { client } = await asUser(t, { email: "farmer@example.com" });
+    const storageId = await storeFile(t, new Uint8Array([9]), "audio/webm;codecs=opus");
+
+    const err = await client
+      .action(api.voice.transcribe, { storageId })
+      .then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(ConvexError);
+    const data = (err as ConvexError<string>).data;
+    expect(data).toMatch(/400/);
+    expect(data).toMatch(/unsupported format/);
+    expect(data).not.toMatch(/cm_test/);
     expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull();
   });
 

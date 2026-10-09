@@ -1,8 +1,7 @@
-import { embed, embedMany } from "ai";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
-import { myProvider } from "@/lib/ai/models";
+import { embedBatch, embedOne } from "@/lib/ai/embed";
 import { isStaffRole, KB_CATEGORIES, type KbCategory, type Role } from "@/lib/constants";
 import { LANGUAGES } from "@/lib/languages";
 import { chunkText } from "@/lib/kb/chunk";
@@ -26,7 +25,6 @@ export type { KbCategory };
 
 const categoryValidator = v.string();
 
-const EMBEDDING_MODEL = "text-embedding-3-small";
 const BACKFILL_BATCH = 32;
 const DEFAULT_BACKFILL_BATCHES = 10;
 /** Vector hits below this cosine score are treated as "no match". */
@@ -60,12 +58,7 @@ async function requireStaffAction(ctx: ActionCtx): Promise<Id<"users">> {
 
 async function embedChunks(chunks: string[]): Promise<number[][]> {
   if (chunks.length === 0) return [];
-  const { embeddings } = await embedMany({
-    model: myProvider.textEmbeddingModel(EMBEDDING_MODEL),
-    values: chunks.map((c) => c.replaceAll("\n", " ")),
-    maxRetries: 1,
-  });
-  return embeddings;
+  return embedBatch(chunks.map((c) => c.replaceAll("\n", " ")));
 }
 
 // ---------------------------------------------------------------------------
@@ -616,11 +609,7 @@ export const searchKnowledgeBase = action({
 
     if (query.trim()) {
       try {
-        const { embedding } = await embed({
-          model: myProvider.textEmbeddingModel(EMBEDDING_MODEL),
-          value: query.replaceAll("\n", " "),
-          maxRetries: 0,
-        });
+        const embedding = await embedOne(query.replaceAll("\n", " "));
         const results = await ctx.vectorSearch("kb_entries", "by_embedding", {
           vector: embedding,
           limit,

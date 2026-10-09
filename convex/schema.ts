@@ -127,7 +127,7 @@ export default defineSchema({
     .index("by_needsEmbedding", ["needsEmbedding"])
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
-      dimensions: 1536, // CallMissed text-embedding-3-small
+      dimensions: 1536, // text-embedding-3-small native; -large requested with dimensions=1536
       filterFields: ["category"],
     })
     .searchIndex("search_content", {

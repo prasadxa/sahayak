@@ -21,13 +21,23 @@ export const CALLMISSED_MODELS = {
   title: process.env.CALLMISSED_MODEL_TITLE ?? "glm-4.7-flash",
   block: process.env.CALLMISSED_MODEL_BLOCK ?? "sarvam-105b-conversations",
   // 1536-dim, matches the `memories`/`kb_entries` vector indexes.
-  embedding: process.env.CALLMISSED_MODEL_EMBEDDING ?? "text-embedding-3-small",
+  // Served at 3072 dims natively, so it is always requested with
+  // `dimensions: EMBEDDING_DIMENSIONS`. (-3-small was returning 502 on 2026-10-09.)
+  embedding: process.env.CALLMISSED_MODEL_EMBEDDING ?? "text-embedding-3-large",
+  // Tried when `embedding` errors.
+  embeddingFallback:
+    process.env.CALLMISSED_MODEL_EMBEDDING_FALLBACK ?? "text-embedding-3-small",
   stt: process.env.CALLMISSED_MODEL_STT ?? "saaras:v3",
   tts: process.env.CALLMISSED_MODEL_TTS ?? "bulbul:v3",
   ttsVoice: process.env.CALLMISSED_TTS_VOICE ?? "shubh",
+  // bulbul:v3 502s on Arabic-script text; Urdu is read by this model instead.
+  ttsUrdu: process.env.CALLMISSED_MODEL_TTS_URDU ?? "gpt-4o-mini-tts",
   imageSmall: process.env.CALLMISSED_IMAGE_SMALL ?? "sdxl-lightning",
   imageLarge: process.env.CALLMISSED_IMAGE_LARGE ?? "flux-2-klein-9b",
 } as const;
+
+/** Must match the vector index dimensions in convex/schema.ts. */
+export const EMBEDDING_DIMENSIONS = 1536;
 
 let _provider: ReturnType<typeof createOpenAI> | null = null;
 

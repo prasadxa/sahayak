@@ -1,10 +1,11 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assertWithinLimit } from "./ratelimits";
 import { callmissedFetch } from "@/lib/callmissed";
 import { LANGUAGES, toBcp47 } from "@/lib/languages";
+import { ttsRouteFor } from "@/lib/tts-languages";
 
 /** Generated read-aloud clips older than this are deleted by the hourly cron. */
 export const TTS_AUDIO_TTL_MS = 6 * 60 * 60 * 1000;
@@ -74,10 +75,18 @@ export const transcribe = action({
       }
       form.append("response_format", "json");
 
-      const res = await callmissedFetch("/audio/transcriptions", {
-        method: "POST",
-        body: form,
-      });
+      let res: Response;
+      try {
+        res = await callmissedFetch("/audio/transcriptions", {
+          method: "POST",
+          body: form,
+        });
+      } catch (e) {
+        // Plain Errors are redacted to "Server Error" in prod; a ConvexError
+        // carries the status + upstream message (callmissedFetch adds no key).
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new ConvexError(`Speech-to-text failed. ${msg}`.slice(0, 500));
+      }
       const json = (await res.json()) as { text?: string };
       return { text: json.text ?? "" };
     } finally {
@@ -101,12 +110,18 @@ export const synthesize = action({
     voice: v.optional(v.string()),
     language: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ url: string | null }> => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ url: string | null; unsupported?: boolean }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
     if (args.language && !LANGUAGES.some((l) => l.code === args.language)) {
       throw new Error(`Unsupported language "${args.language}".`);
     }
+    const route = args.language ? ttsRouteFor(args.language) : { kind: "default" as const };
+    // No model reads this language honestly: say so instead of 502ing.
+    if (route.kind === "none") return { url: null, unsupported: true };
     await assertWithinLimit(
       ctx,
       "voice",
@@ -128,11 +143,15 @@ export const synthesize = action({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: tts.model,
-        voice: args.voice ?? ttsVoice.model,
+        model: route.kind === "override" ? route.model : tts.model,
+        voice:
+          route.kind === "override" ? route.voice : (args.voice ?? ttsVoice.model),
         input: args.text.slice(0, 4000),
         response_format: "mp3",
-        ...(bcp47 ? { language: bcp47, target_language_code: bcp47 } : {}),
+        // Override models don't take bulbul's language fields.
+        ...(bcp47 && route.kind === "default"
+          ? { language: bcp47, target_language_code: bcp47 }
+          : {}),
       }),
     });
 

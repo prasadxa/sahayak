@@ -257,7 +257,7 @@ describe("kb stays on the fixed embedding model", () => {
     delete process.env.CALLMISSED_API_KEY;
   });
 
-  it("searchKnowledgeBase embeds with text-embedding-3-small even with other overrides stored", async () => {
+  it("searchKnowledgeBase embeds with text-embedding-3-large even with other overrides stored", async () => {
     const t = testConvex();
     const captured: Captured[] = [];
     mockCallmissed(captured);
@@ -281,6 +281,6 @@ describe("kb stays on the fixed embedding model", () => {
 
     const embedCall = captured.find((c) => c.url.endsWith("/embeddings"));
     const body = JSON.parse(String(embedCall?.body));
-    expect(body.model).toBe("text-embedding-3-small");
+    expect(body.model).toBe("text-embedding-3-large");
   });
 });

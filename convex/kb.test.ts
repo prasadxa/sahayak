@@ -672,3 +672,48 @@ describe("ingestFile storage cleanup", () => {
     expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).not.toBeNull();
   });
 });
+
+describe("kb embedding model fallback", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.CALLMISSED_API_KEY;
+  });
+
+  it("falls back to the next embedding model (1536 dims) when the primary 502s", async () => {
+    process.env.CALLMISSED_API_KEY = "cm_test";
+    const bodies: Array<{ model: string; dimensions?: number }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: unknown, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        bodies.push(body);
+        if (body.model === "text-embedding-3-large") {
+          return new Response("Bad Gateway", { status: 502 });
+        }
+        const inputs: unknown[] = Array.isArray(body.input) ? body.input : [body.input];
+        return new Response(
+          JSON.stringify({
+            object: "list",
+            data: inputs.map((_, index) => ({
+              object: "embedding",
+              index,
+              embedding: Array<number>(body.dimensions ?? 3072).fill(0.01),
+            })),
+            model: body.model,
+            usage: { prompt_tokens: 1, total_tokens: 1 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      })
+    );
+    const t = testConvex();
+    await seedChunks(t);
+    const res = await t.action(internal.kb.backfillEmbeddingsInternal, {});
+    expect(res.remaining).toBe(0);
+    expect(bodies.some((b) => b.model === "text-embedding-3-small" && b.dimensions === 1536)).toBe(
+      true
+    );
+    const rows = await t.run((ctx) => ctx.db.query("kb_entries").collect());
+    expect(rows.every((r) => r.embedding?.length === 1536)).toBe(true);
+  });
+});
