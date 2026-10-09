@@ -69,6 +69,14 @@ const problem = [
   "Sahayak is our prototype for Smart India Hackathon 2026, problem statement 26088 (Hardware category), under the Ministry of Cooperation and NCCT context: one help desk that speaks the member's language, on a phone or at a kiosk in the society office.",
 ];
 
+const anywhere = [
+  "Sahayak is a live web app at sahayak.rough-cell-383c.workers.dev. Use it from any location, on any phone, tablet or laptop.",
+  "All you need is a browser, plus a microphone and speaker for voice. No special hardware is required.",
+  "Install it to your home screen as a PWA, so it opens like an app.",
+  "The Raspberry Pi kiosk is an optional add-on for shared public spaces such as a society office. It is a prototype and has not yet been tested on real hardware.",
+  "Answers are processed in the cloud, so an internet connection is needed. Offline FAQs are planned, not built yet.",
+];
+
 const flow = [
   { title: "File", body: "By chat or at the kiosk. The assistant collects the details and files it." },
   { title: "Reference", body: "A GRV-XXXXXXXX ID is returned. The kiosk can print it as a receipt with a QR code." },
@@ -187,6 +195,29 @@ export default function WelcomePage() {
               <p key={p}>{p}</p>
             ))}
           </div>
+        </Wrap>
+      </section>
+
+      {/* Available from anywhere */}
+      <section id="anywhere" aria-labelledby="anywhere-title">
+        <Wrap className="grid gap-10 py-20 md:grid-cols-[1fr_1.4fr]">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-widest text-[#1E7B3A]">Available from anywhere</p>
+            <h2 id="anywhere-title" className="font-display mt-2 text-4xl md:text-5xl">
+              A live web app. Open it and ask.
+            </h2>
+            <div className="mt-6">
+              <a href={LIVE_URL} className={btnPrimary}>Open the live app</a>
+            </div>
+          </div>
+          <ul className="grid gap-4 text-lg leading-relaxed">
+            {anywhere.map((x) => (
+              <li key={x} className="flex gap-3">
+                <span aria-hidden className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-[#F28C1B]" />
+                {x}
+              </li>
+            ))}
+          </ul>
         </Wrap>
       </section>
 
