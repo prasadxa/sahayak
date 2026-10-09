@@ -24,6 +24,7 @@ import { api } from "@/convex/_generated/api";
 import { KioskReceipt } from "@/components/kiosk/receipt";
 import { LanguageGrid } from "@/components/kiosk/language-grid";
 import { PhaseIndicator, Waveform } from "@/components/kiosk/phase-indicator";
+import { toSttAudio } from "@/lib/audio-wav";
 import { useI18n } from "@/lib/i18n";
 import {
   KIOSK_MAX_RECORDING_MS,
@@ -286,11 +287,12 @@ const KioskApp = ({ isKioskAccount }: { isKioskAccount: boolean }) => {
       const sessionId = stateRef.current.sessionId;
       const language = stateRef.current.lang ?? "en";
       try {
-        const postUrl = await generateUploadUrl({ contentType: mimeType });
+        const clip = await toSttAudio(blob);
+        const postUrl = await generateUploadUrl({ contentType: clip.mimeType });
         const res = await fetch(postUrl, {
           method: "POST",
-          headers: { "Content-Type": mimeType },
-          body: blob,
+          headers: { "Content-Type": clip.mimeType },
+          body: clip.blob,
         });
         const { storageId } = await res.json();
         const { text } = await transcribe({

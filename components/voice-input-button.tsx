@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { toSttAudio } from "@/lib/audio-wav";
 import { useI18n } from "@/lib/i18n";
 
 /** Recording stops by itself after this long. */
@@ -94,11 +95,14 @@ const PureVoiceInputButton = ({
           toast.error(t("noSpeech"), { id: TOAST_ID });
           return;
         }
-        const postUrl = await generateAttachmentUrl({ contentType: mimeType });
+        const clip = await toSttAudio(blob);
+        const postUrl = await generateAttachmentUrl({
+          contentType: clip.mimeType,
+        });
         const uploadRes = await fetch(postUrl, {
           method: "POST",
-          headers: { "Content-Type": mimeType },
-          body: blob,
+          headers: { "Content-Type": clip.mimeType },
+          body: clip.blob,
         });
         const { storageId } = await uploadRes.json();
         const { text } = await transcribe({ storageId, language: lang });
