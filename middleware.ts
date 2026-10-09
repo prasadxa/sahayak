@@ -12,6 +12,7 @@ const isApiRoute = createRouteMatcher(["/api", "/api/(.*)", "/trpc", "/trpc/(.*)
 const isPublicPage = createRouteMatcher([
   "/login",
   "/register",
+  "/welcome",
   "/track",
   "/track/(.*)",
   "/manifest.webmanifest",
